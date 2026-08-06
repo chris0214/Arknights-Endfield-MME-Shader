@@ -1,0 +1,13 @@
+// Generic Endfield EyeThrough capture wrapper.
+// The GUI/package generator replaces the subset lists and head bone for each
+// imported PMX. This checked-in fallback intentionally matches no real subset.
+#define EF_EYE_CAPTURE_HEAD_BONE "頭"
+#define EF_EYE_CAPTURE_EYE_SUBSETS "2147483647"
+#define EF_EYE_CAPTURE_HIGHLIGHT_SUBSETS "2147483647"
+#define EF_EYE_CAPTURE_SCLERA_SUBSETS "2147483647"
+#define EF_EYE_CAPTURE_BROW_SUBSETS "2147483647"
+#define EF_EYE_CAPTURE_IGNORED_SUBSETS "2147483647"
+#define EF_EYE_CAPTURE_HAIR_DEPTH_SUBSETS "2147483647"
+#define EF_EYE_CAPTURE_SHIFTED_SUBSETS "2147483647"
+
+#include "internal/endfield_eye_through_capture_core.fxsub"

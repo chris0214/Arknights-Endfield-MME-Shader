@@ -1,0 +1,63 @@
+// CP932 controller labels for reliable display and lookup in Japanese MMD.
+#if EF_OUTLINE_CONTROLLER_ENABLED
+float EfOutlineCloseStrength : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "•`•ÓÚ‡‹­“x"; >;
+float EfOutlineCloseRadiusP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "•`•ÓÚ‡”ÍˆÍ+"; >;
+float EfOutlineCloseRadiusM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "•`•ÓÚ‡”ÍˆÍ-"; >;
+#if EF_OUTLINE_DOMAIN == EF_OUTLINE_DOMAIN_HAIR
+float EfOutlineWidthP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "“ª”¯•`•ÓŠ°“x+"; >;
+float EfOutlineWidthM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "“ª”¯•`•ÓŠ°“x-"; >;
+float EfOutlineStrengthP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "“ª”¯•`•Ó‹­“x+"; >;
+float EfOutlineStrengthM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "“ª”¯•`•Ó‹­“x-"; >;
+float EfOutlineContrastP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "“ª”¯•`•Ó‘Î”ä“x+"; >;
+float EfOutlineContrastM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "“ª”¯•`•Ó‘Î”ä“x-"; >;
+float EfOutlineColorMode : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "“ª”¯•`•ÓF–ÍŽ®"; >;
+float EfOutlineRP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "“ª”¯•`•Óg+"; >;
+float EfOutlineRM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "“ª”¯•`•Óg-"; >;
+float EfOutlineGP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "“ª”¯•`•Ó—Î+"; >;
+float EfOutlineGM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "“ª”¯•`•Ó—Î-"; >;
+float EfOutlineBP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "“ª”¯•`•Ó—•+"; >;
+float EfOutlineBM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "“ª”¯•`•Ó—•-"; >;
+#elif EF_OUTLINE_DOMAIN == EF_OUTLINE_DOMAIN_FACE
+float EfOutlineWidthP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "–Ê•”•`•ÓŠ°“x+"; >;
+float EfOutlineWidthM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "–Ê•”•`•ÓŠ°“x-"; >;
+float EfOutlineStrengthP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "–Ê•”•`•Ó‹­“x+"; >;
+float EfOutlineStrengthM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "–Ê•”•`•Ó‹­“x-"; >;
+float EfOutlineContrastP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "–Ê•”•`•Ó‘Î”ä“x+"; >;
+float EfOutlineContrastM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "–Ê•”•`•Ó‘Î”ä“x-"; >;
+float EfOutlineColorMode : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "–Ê•”•`•ÓF–ÍŽ®"; >;
+float EfOutlineRP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "–Ê•”•`•Óg+"; >;
+float EfOutlineRM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "–Ê•”•`•Óg-"; >;
+float EfOutlineGP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "–Ê•”•`•Ó—Î+"; >;
+float EfOutlineGM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "–Ê•”•`•Ó—Î-"; >;
+float EfOutlineBP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "–Ê•”•`•Ó—•+"; >;
+float EfOutlineBM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "–Ê•”•`•Ó—•-"; >;
+#elif EF_OUTLINE_DOMAIN == EF_OUTLINE_DOMAIN_SKIN
+float EfOutlineWidthP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "”ç•†•`•ÓŠ°“x+"; >;
+float EfOutlineWidthM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "”ç•†•`•ÓŠ°“x-"; >;
+float EfOutlineStrengthP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "”ç•†•`•Ó‹­“x+"; >;
+float EfOutlineStrengthM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "”ç•†•`•Ó‹­“x-"; >;
+float EfOutlineContrastP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "”ç•†•`•Ó‘Î”ä“x+"; >;
+float EfOutlineContrastM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "”ç•†•`•Ó‘Î”ä“x-"; >;
+float EfOutlineColorMode : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "”ç•†•`•ÓF–ÍŽ®"; >;
+float EfOutlineRP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "”ç•†•`•Óg+"; >;
+float EfOutlineRM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "”ç•†•`•Óg-"; >;
+float EfOutlineGP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "”ç•†•`•Ó—Î+"; >;
+float EfOutlineGM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "”ç•†•`•Ó—Î-"; >;
+float EfOutlineBP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "”ç•†•`•Ó—•+"; >;
+float EfOutlineBM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "”ç•†•`•Ó—•-"; >;
+#elif EF_OUTLINE_DOMAIN == EF_OUTLINE_DOMAIN_CLOTH
+float EfOutlineWidthP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "ˆß•ž•`•ÓŠ°“x+"; >;
+float EfOutlineWidthM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "ˆß•ž•`•ÓŠ°“x-"; >;
+float EfOutlineStrengthP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "ˆß•ž•`•Ó‹­“x+"; >;
+float EfOutlineStrengthM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "ˆß•ž•`•Ó‹­“x-"; >;
+float EfOutlineContrastP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "ˆß•ž•`•Ó‘Î”ä“x+"; >;
+float EfOutlineContrastM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "ˆß•ž•`•Ó‘Î”ä“x-"; >;
+float EfOutlineColorMode : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "ˆß•ž•`•ÓF–ÍŽ®"; >;
+float EfOutlineRP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "ˆß•ž•`•Óg+"; >;
+float EfOutlineRM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "ˆß•ž•`•Óg-"; >;
+float EfOutlineGP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "ˆß•ž•`•Ó—Î+"; >;
+float EfOutlineGM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "ˆß•ž•`•Ó—Î-"; >;
+float EfOutlineBP : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "ˆß•ž•`•Ó—•+"; >;
+float EfOutlineBM : CONTROLOBJECT < string name = EF_OUTLINE_CONTROLLER_NAME; string item = "ˆß•ž•`•Ó—•-"; >;
+#endif
+#endif

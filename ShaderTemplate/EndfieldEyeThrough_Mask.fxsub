@@ -1,0 +1,41 @@
+// Transparent depth mask for objects that must not appear in the feature RT.
+// Use strict LESS so a farther surface that quantizes to the same DX9 depth
+// value cannot erase an already captured eye at long camera distances.
+float4x4 EfEyeMaskWorldViewProjection : WORLDVIEWPROJECTION;
+
+struct EfEyeMaskVaryings {
+    float4 positionCS : POSITION;
+};
+
+EfEyeMaskVaryings EfEyeMaskVS(float4 positionOS : POSITION)
+{
+    EfEyeMaskVaryings output;
+    output.positionCS = mul(positionOS, EfEyeMaskWorldViewProjection);
+    return output;
+}
+
+float4 EfEyeMaskPS(EfEyeMaskVaryings input) : COLOR0
+{
+    return 0.0;
+}
+
+#define EF_EYE_MASK_TECHNIQUE(name, passName) \
+    technique name < string MMDPass = passName; > { \
+        pass DrawObject { \
+            ZEnable = true; \
+            ZWriteEnable = true; \
+            ZFunc = LESS; \
+            CullMode = NONE; \
+            AlphaTestEnable = false; \
+            AlphaBlendEnable = false; \
+            VertexShader = compile vs_3_0 EfEyeMaskVS(); \
+            PixelShader = compile ps_3_0 EfEyeMaskPS(); \
+        } \
+    }
+
+EF_EYE_MASK_TECHNIQUE(EfEyeMaskObject, "object")
+EF_EYE_MASK_TECHNIQUE(EfEyeMaskObjectSs, "object_ss")
+
+technique EfEyeMaskEdge < string MMDPass = "edge"; > { }
+technique EfEyeMaskShadow < string MMDPass = "shadow"; > { }
+technique EfEyeMaskZPlot < string MMDPass = "zplot"; > { }

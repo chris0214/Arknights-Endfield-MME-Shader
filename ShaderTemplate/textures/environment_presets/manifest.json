@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "default_preset": "monochrome_studio_02",
+  "runtime_slot": "../common/cloth_environment_current.dds",
+  "encoding": {
+    "layout": "equirectangular",
+    "format": "RGBM",
+    "rgbm_range": 6.0,
+    "width": 1024,
+    "height": 512,
+    "mip_count": 7
+  },
+  "presets": [
+    {
+      "id": "brown_photostudio_02",
+      "display_name": "Brown Photo Studio 02",
+      "category": "studio_soft",
+      "source_hdr": "brown_photostudio_02_4k.hdr",
+      "dds": "brown_photostudio_02.dds",
+      "recommended_strength": 0.18,
+      "recommended_rotation_degrees": 0.0,
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "monochrome_studio_02",
+      "display_name": "Monochrome Studio 02",
+      "category": "studio_neutral",
+      "source_hdr": "monochrome_studio_02_4k.hdr",
+      "dds": "monochrome_studio_02.dds",
+      "recommended_strength": 0.20,
+      "recommended_rotation_degrees": 0.0,
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "ferndale_studio_01",
+      "display_name": "Ferndale Studio 01",
+      "category": "studio_directional",
+      "source_hdr": "ferndale_studio_01_4k.hdr",
+      "dds": "ferndale_studio_01.dds",
+      "recommended_strength": 0.17,
+      "recommended_rotation_degrees": 0.0,
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "studio_small_09",
+      "display_name": "Studio Small 09",
+      "category": "studio_contrast",
+      "source_hdr": "studio_small_09_4k.hdr",
+      "dds": "studio_small_09.dds",
+      "recommended_strength": 0.16,
+      "recommended_rotation_degrees": 0.0,
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "abandoned_hopper_terminal_04",
+      "display_name": "Abandoned Hopper Terminal 04",
+      "category": "outdoor_sun",
+      "source_hdr": "abandoned_hopper_terminal_04_4k.hdr",
+      "dds": "abandoned_hopper_terminal_04.dds",
+      "recommended_strength": 0.14,
+      "recommended_rotation_degrees": 0.0,
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "abandoned_tank_farm_03",
+      "display_name": "Abandoned Tank Farm 03",
+      "category": "outdoor_overcast",
+      "source_hdr": "abandoned_tank_farm_03_4k.hdr",
+      "dds": "abandoned_tank_farm_03.dds",
+      "recommended_strength": 0.15,
+      "recommended_rotation_degrees": 0.0,
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "abandoned_tank_farm_04",
+      "display_name": "Abandoned Tank Farm 04",
+      "category": "outdoor_clear",
+      "source_hdr": "abandoned_tank_farm_04_4k.hdr",
+      "dds": "abandoned_tank_farm_04.dds",
+      "recommended_strength": 0.15,
+      "recommended_rotation_degrees": 0.0,
+      "license": "CC0-1.0"
+    }
+  ]
+}

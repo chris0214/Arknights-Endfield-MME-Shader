@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "package_date": "2026-08-06",
+  "license": "MIT for project-authored code and documentation; see per-asset notes",
+  "assets": [
+    {"path":"ShaderTemplate/textures/environment_presets/*.dds","status":"redistributable","license":"CC0-1.0","note":"Converted from user-supplied CC0 HDR files"},
+    {"path":"ShaderTemplate/controller/*.pmx","status":"project-authored","license":"MIT"},
+    {"path":"ShaderTemplate/internal/**","status":"project-authored-or-reimplemented","license":"MIT"},
+    {"path":"ShaderTemplate/docs/reference/ray_mmd_LICENSE.txt","status":"notice-only","license":"MIT","note":"Preserved because IBL workflow was studied"},
+    {"path":"OptionalAssets/ProvenanceUnverified/**","status":"do-not-republish-without-review","license":"unknown","note":"Research/extracted assets, including the legacy Ray fallback; not covered by root MIT"}
+  ]
+}

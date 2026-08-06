@@ -1,0 +1,682 @@
+#ifndef ENDFIELD_POST_FXSUB_INCLUDED
+#define ENDFIELD_POST_FXSUB_INCLUDED
+
+// The scene is captured into FP16 so material highlights above display white
+// remain available to Bloom and tone mapping.
+float EF_POST_EXPOSURE_EV = 0.08;
+float EF_POST_CONTRAST = 1.0;
+float EF_POST_SATURATION = 1.0;
+float EF_POST_LOG2_STRENGTH = 1.25;
+float EF_POST_GT_CONTRAST = 1.0;
+float EF_POST_GT_SHOULDER = 0.40;
+float EF_POST_AGX_CONTRAST = 1.0;
+float EF_POST_AGX_SATURATION = 1.0;
+float EF_POST_NEUTRAL_SHOULDER = 0.76;
+float EF_POST_NEUTRAL_DESATURATION = 0.15;
+float EF_POST_ACES_WHITE_POINT = 4.0;
+float EF_POST_BLOOM_INTENSITY = 0.16;
+float EF_POST_BLOOM_THRESHOLD = 0.65;
+float EF_POST_BLOOM_SOFT_KNEE = 0.35;
+float EF_POST_BLOOM_RADIUS = 1.0;
+float EF_POST_BLOOM_SCATTER = 0.62;
+float3 EF_POST_BLOOM_TINT = float3(1.0, 1.0, 1.0);
+float EF_POST_DITHER_STRENGTH = 0.5;
+float EF_POST_WHITE_BALANCE_TEMPERATURE = 0.0;
+float EF_POST_WHITE_BALANCE_TINT = 0.0;
+float EF_POST_SHARPEN_STRENGTH = 0.0;
+
+#include "internal/endfield_post_controls.inc"
+
+float Script : STANDARDSGLOBAL <
+    string ScriptOutput = "color";
+    string ScriptClass = "scene";
+    string ScriptOrder = "postprocess";
+> = 0.8;
+
+float4 EfPostClearColor = float4(1.0, 1.0, 1.0, 0.0);
+float4 EfPostWorkClearColor = float4(0.0, 0.0, 0.0, 0.0);
+float EfPostClearDepth = 1.0;
+float2 EfPostViewportSize : VIEWPORTPIXELSIZE;
+
+texture2D EfPostSceneMap : RENDERCOLORTARGET <
+    float2 ViewPortRatio = { 1.0, 1.0 };
+    int MipLevels = 1;
+    string Format = "A16B16G16R16F";
+>;
+
+sampler2D EfPostSceneSampler = sampler_state {
+    texture = <EfPostSceneMap>;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = NONE;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+
+texture2D EfPostToneMap : RENDERCOLORTARGET <
+    float2 ViewPortRatio = { 1.0, 1.0 };
+    int MipLevels = 1;
+    string Format = "A16B16G16R16F";
+>;
+
+sampler2D EfPostToneMapSampler = sampler_state {
+    texture = <EfPostToneMap>;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = NONE;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+
+texture2D EfPostDepthBuffer : RENDERDEPTHSTENCILTARGET <
+    float2 ViewPortRatio = { 1.0, 1.0 };
+    string Format = "D24S8";
+>;
+
+#define EF_POST_DECLARE_BLOOM_TARGET(Name, RatioX, RatioY) \
+texture2D Name : RENDERCOLORTARGET < \
+    float2 ViewPortRatio = { RatioX, RatioY }; \
+    int MipLevels = 1; \
+    string Format = "A16B16G16R16F"; \
+>; \
+sampler2D Name##Sampler = sampler_state { \
+    texture = <Name>; \
+    MinFilter = LINEAR; \
+    MagFilter = LINEAR; \
+    MipFilter = NONE; \
+    AddressU = CLAMP; \
+    AddressV = CLAMP; \
+};
+
+EF_POST_DECLARE_BLOOM_TARGET(EfPostBloom0, 0.5, 0.5)
+EF_POST_DECLARE_BLOOM_TARGET(EfPostBloom1, 0.25, 0.25)
+EF_POST_DECLARE_BLOOM_TARGET(EfPostBloom2, 0.125, 0.125)
+EF_POST_DECLARE_BLOOM_TARGET(EfPostBloom3, 0.0625, 0.0625)
+EF_POST_DECLARE_BLOOM_TARGET(EfPostBloom4, 0.03125, 0.03125)
+EF_POST_DECLARE_BLOOM_TARGET(EfPostBloomBlurTemp, 0.03125, 0.03125)
+EF_POST_DECLARE_BLOOM_TARGET(EfPostBloomBlur, 0.03125, 0.03125)
+EF_POST_DECLARE_BLOOM_TARGET(EfPostBloomUp3, 0.0625, 0.0625)
+EF_POST_DECLARE_BLOOM_TARGET(EfPostBloomUp2, 0.125, 0.125)
+EF_POST_DECLARE_BLOOM_TARGET(EfPostBloomUp1, 0.25, 0.25)
+EF_POST_DECLARE_BLOOM_TARGET(EfPostBloomUp0, 0.5, 0.5)
+
+struct EfPostVaryings {
+    float4 position : POSITION;
+    float2 uv : TEXCOORD0;
+};
+
+EfPostVaryings EfPostVS(float4 position : POSITION, float4 texcoord : TEXCOORD0)
+{
+    EfPostVaryings output = (EfPostVaryings)0;
+    output.position = position;
+    output.uv = texcoord.xy;
+    return output;
+}
+
+float3 EfPostSrgbToLinear(float3 color)
+{
+    float3 low = color / 12.92;
+    float3 high = pow(max((color + 0.055) / 1.055, 1e-6), 2.4);
+    return lerp(low, high, step(0.04045, color));
+}
+
+float3 EfPostLinearToSrgb(float3 color)
+{
+    color = max(color, 0.0);
+    float3 low = color * 12.92;
+    float3 high = 1.055 * pow(max(color, 1e-6), 1.0 / 2.4) - 0.055;
+    return lerp(low, high, step(0.0031308, color));
+}
+
+float3 EfPostBloomDownsample9(
+    sampler2D sourceSampler, float2 uv, float2 texel)
+{
+    float2 center = uv + texel * 0.5;
+    float3 color = tex2D(sourceSampler, center).rgb * 0.25;
+    color += tex2D(sourceSampler, center + texel * float2(-1.0,  0.0)).rgb * 0.125;
+    color += tex2D(sourceSampler, center + texel * float2( 1.0,  0.0)).rgb * 0.125;
+    color += tex2D(sourceSampler, center + texel * float2( 0.0, -1.0)).rgb * 0.125;
+    color += tex2D(sourceSampler, center + texel * float2( 0.0,  1.0)).rgb * 0.125;
+    color += tex2D(sourceSampler, center + texel * float2(-1.0, -1.0)).rgb * 0.0625;
+    color += tex2D(sourceSampler, center + texel * float2( 1.0, -1.0)).rgb * 0.0625;
+    color += tex2D(sourceSampler, center + texel * float2(-1.0,  1.0)).rgb * 0.0625;
+    color += tex2D(sourceSampler, center + texel * float2( 1.0,  1.0)).rgb * 0.0625;
+    return color;
+}
+
+float3 EfPostBloomUpsampleTent(
+    sampler2D sourceSampler, float2 uv, float2 texel)
+{
+    float2 center = uv + texel * 0.5;
+    float3 color = tex2D(sourceSampler, center).rgb * 4.0;
+    color += tex2D(sourceSampler, center + texel * float2(-1.0,  0.0)).rgb * 2.0;
+    color += tex2D(sourceSampler, center + texel * float2( 1.0,  0.0)).rgb * 2.0;
+    color += tex2D(sourceSampler, center + texel * float2( 0.0, -1.0)).rgb * 2.0;
+    color += tex2D(sourceSampler, center + texel * float2( 0.0,  1.0)).rgb * 2.0;
+    color += tex2D(sourceSampler, center + texel * float2(-1.0, -1.0)).rgb;
+    color += tex2D(sourceSampler, center + texel * float2( 1.0, -1.0)).rgb;
+    color += tex2D(sourceSampler, center + texel * float2(-1.0,  1.0)).rgb;
+    color += tex2D(sourceSampler, center + texel * float2( 1.0,  1.0)).rgb;
+    return color / 16.0;
+}
+
+float EfPostBloomKarisWeight(float3 color)
+{
+    float luminance = dot(
+        max(color, 0.0),
+        float3(0.2126, 0.7152, 0.0722));
+    return 1.0 / (1.0 + luminance);
+}
+
+float3 EfPostBloomSampleSceneLinear(float2 uv)
+{
+    return EfPostSrgbToLinear(
+        tex2D(EfPostSceneSampler, uv).rgb);
+}
+
+float3 EfPostBloomDownsample13Karis(float2 uv, float2 texel)
+{
+    float2 center = uv + texel * 0.5;
+    float3 A = EfPostBloomSampleSceneLinear(
+        center + texel * float2(-1.0, -1.0));
+    float3 B = EfPostBloomSampleSceneLinear(
+        center + texel * float2( 0.0, -1.0));
+    float3 C = EfPostBloomSampleSceneLinear(
+        center + texel * float2( 1.0, -1.0));
+    float3 D = EfPostBloomSampleSceneLinear(
+        center + texel * float2(-0.5, -0.5));
+    float3 E = EfPostBloomSampleSceneLinear(
+        center + texel * float2( 0.5, -0.5));
+    float3 F = EfPostBloomSampleSceneLinear(
+        center + texel * float2(-1.0,  0.0));
+    float3 G = EfPostBloomSampleSceneLinear(center);
+    float3 H = EfPostBloomSampleSceneLinear(
+        center + texel * float2( 1.0,  0.0));
+    float3 I = EfPostBloomSampleSceneLinear(
+        center + texel * float2(-0.5,  0.5));
+    float3 J = EfPostBloomSampleSceneLinear(
+        center + texel * float2( 0.5,  0.5));
+    float3 K = EfPostBloomSampleSceneLinear(
+        center + texel * float2(-1.0,  1.0));
+    float3 L = EfPostBloomSampleSceneLinear(
+        center + texel * float2( 0.0,  1.0));
+    float3 M = EfPostBloomSampleSceneLinear(
+        center + texel * float2( 1.0,  1.0));
+
+    float3 group0 = (D + E + I + J) * 0.25;
+    float3 group1 = (A + B + F + G) * 0.25;
+    float3 group2 = (B + C + G + H) * 0.25;
+    float3 group3 = (F + G + K + L) * 0.25;
+    float3 group4 = (G + H + L + M) * 0.25;
+
+    float weight0 = EfPostBloomKarisWeight(group0) * 0.50;
+    float weight1 = EfPostBloomKarisWeight(group1) * 0.125;
+    float weight2 = EfPostBloomKarisWeight(group2) * 0.125;
+    float weight3 = EfPostBloomKarisWeight(group3) * 0.125;
+    float weight4 = EfPostBloomKarisWeight(group4) * 0.125;
+    float weightSum = weight0 + weight1 + weight2 + weight3 + weight4;
+
+    return (
+        group0 * weight0
+        + group1 * weight1
+        + group2 * weight2
+        + group3 * weight3
+        + group4 * weight4
+    ) / max(weightSum, 1e-5);
+}
+
+float3 EfPostBloomPrefilter(float3 color)
+{
+    float luminance = dot(color, float3(0.2126, 0.7152, 0.0722));
+    float maximumChannel = max(max(color.r, color.g), color.b);
+    // Use the whole captured scene. Perceptual luminance keeps broad surfaces
+    // stable, while the max-channel term preserves saturated lamps/emissives.
+    float brightness = max(luminance, maximumChannel * 0.65);
+    float threshold = EfPostControllerBloomThreshold(
+        EF_POST_BLOOM_THRESHOLD);
+    float knee = max(
+        threshold * EfPostControllerBloomSoftKnee(
+            EF_POST_BLOOM_SOFT_KNEE),
+        1e-5);
+    float soft = clamp(
+        brightness - threshold + knee,
+        0.0,
+        2.0 * knee);
+    soft = soft * soft / (4.0 * knee + 1e-5);
+    float contribution = max(brightness - threshold, soft)
+        / max(brightness, 1e-5);
+    return color * max(contribution, 0.0);
+}
+
+float4 EfPostBloomPrefilterPS(float2 uv : TEXCOORD0) : COLOR0
+{
+    float2 texel = 1.0 / max(EfPostViewportSize, 1.0);
+    float3 color = EfPostBloomDownsample13Karis(uv, texel);
+    return float4(EfPostBloomPrefilter(color), 1.0);
+}
+
+#define EF_POST_DEFINE_BLOOM_DOWN(Name, SourceSampler, SourceScale) \
+float4 Name(float2 uv : TEXCOORD0) : COLOR0 { \
+    float2 texel = SourceScale / max(EfPostViewportSize, 1.0); \
+    return float4(EfPostBloomDownsample9(SourceSampler, uv, texel), 1.0); \
+}
+
+EF_POST_DEFINE_BLOOM_DOWN(EfPostBloomDown1PS, EfPostBloom0Sampler, 2.0)
+EF_POST_DEFINE_BLOOM_DOWN(EfPostBloomDown2PS, EfPostBloom1Sampler, 4.0)
+EF_POST_DEFINE_BLOOM_DOWN(EfPostBloomDown3PS, EfPostBloom2Sampler, 8.0)
+EF_POST_DEFINE_BLOOM_DOWN(EfPostBloomDown4PS, EfPostBloom3Sampler, 16.0)
+
+float4 EfPostBloomBlurHorizontalPS(float2 uv : TEXCOORD0) : COLOR0
+{
+    float2 texel = 32.0 / max(EfPostViewportSize, 1.0);
+    float radius = EfPostControllerBloomRadius(EF_POST_BLOOM_RADIUS);
+    float2 center = uv + texel * 0.5;
+    float2 offset = float2(texel.x * radius, 0.0);
+    float3 color = tex2D(EfPostBloom4Sampler, center).rgb * 0.40;
+    color += tex2D(EfPostBloom4Sampler, center + offset).rgb * 0.24;
+    color += tex2D(EfPostBloom4Sampler, center - offset).rgb * 0.24;
+    color += tex2D(EfPostBloom4Sampler, center + offset * 2.0).rgb * 0.06;
+    color += tex2D(EfPostBloom4Sampler, center - offset * 2.0).rgb * 0.06;
+    return float4(color, 1.0);
+}
+
+float4 EfPostBloomBlurVerticalPS(float2 uv : TEXCOORD0) : COLOR0
+{
+    float2 texel = 32.0 / max(EfPostViewportSize, 1.0);
+    float radius = EfPostControllerBloomRadius(EF_POST_BLOOM_RADIUS);
+    float2 center = uv + texel * 0.5;
+    float2 offset = float2(0.0, texel.y * radius);
+    float3 color = tex2D(EfPostBloomBlurTempSampler, center).rgb * 0.40;
+    color += tex2D(EfPostBloomBlurTempSampler, center + offset).rgb * 0.24;
+    color += tex2D(EfPostBloomBlurTempSampler, center - offset).rgb * 0.24;
+    color += tex2D(EfPostBloomBlurTempSampler, center + offset * 2.0).rgb * 0.06;
+    color += tex2D(EfPostBloomBlurTempSampler, center - offset * 2.0).rgb * 0.06;
+    return float4(color, 1.0);
+}
+
+float3 EfPostBloomMerge(float3 highResolution, float3 lowResolution)
+{
+    return highResolution + lowResolution
+        * EfPostControllerBloomScatter(EF_POST_BLOOM_SCATTER);
+}
+
+#define EF_POST_DEFINE_BLOOM_UP( \
+    Name, HighSampler, LowSampler, HighScale, LowScale) \
+float4 Name(float2 uv : TEXCOORD0) : COLOR0 { \
+    float2 highTexel = HighScale / max(EfPostViewportSize, 1.0); \
+    float2 lowTexel = LowScale / max(EfPostViewportSize, 1.0); \
+    float3 highResolution = tex2D( \
+        HighSampler, uv + highTexel * 0.5).rgb; \
+    float3 lowResolution = EfPostBloomUpsampleTent( \
+        LowSampler, uv, lowTexel); \
+    return float4(EfPostBloomMerge(highResolution, lowResolution), 1.0); \
+}
+
+EF_POST_DEFINE_BLOOM_UP(
+    EfPostBloomUp3PS, EfPostBloom3Sampler, EfPostBloomBlurSampler, 16.0, 32.0)
+EF_POST_DEFINE_BLOOM_UP(
+    EfPostBloomUp2PS, EfPostBloom2Sampler, EfPostBloomUp3Sampler, 8.0, 16.0)
+EF_POST_DEFINE_BLOOM_UP(
+    EfPostBloomUp1PS, EfPostBloom1Sampler, EfPostBloomUp2Sampler, 4.0, 8.0)
+EF_POST_DEFINE_BLOOM_UP(
+    EfPostBloomUp0PS, EfPostBloom0Sampler, EfPostBloomUp1Sampler, 2.0, 4.0)
+
+float3 EfPostLog2Tonemap(float3 color)
+{
+    float strength = max(
+        EfPostControllerLog2Strength(EF_POST_LOG2_STRENGTH),
+        1e-4);
+    float peak = max(max(color.r, color.g), color.b);
+    float mappedPeak = log2(1.0 + strength * peak) / log2(1.0 + strength);
+    float3 mapped = color * (mappedPeak / max(peak, 1e-5));
+    return max(mapped, 0.0);
+}
+
+float3 EfPostGtTonemap(float3 color)
+{
+    float contrast = EfPostControllerGtContrast(EF_POST_GT_CONTRAST);
+    float linearLength = EfPostControllerGtShoulder(EF_POST_GT_SHOULDER);
+    const float maxDisplayBrightness = 1.0;
+    const float linearStart = 0.22;
+    const float blackTightness = 1.33;
+    const float blackPedestal = 0.0;
+
+    float shoulderLength =
+        ((maxDisplayBrightness - linearStart) * linearLength)
+        / max(contrast, 1e-5);
+    float shoulderStart = linearStart + shoulderLength;
+    float shoulderLinearEnd = linearStart + contrast * shoulderLength;
+    float shoulderScale = (contrast * maxDisplayBrightness)
+        / max(maxDisplayBrightness - shoulderLinearEnd, 1e-5);
+    float shoulderExponent = -shoulderScale / maxDisplayBrightness;
+
+    float3 x = max(color, 0.0);
+    float3 toeWeight = 1.0 - smoothstep(0.0, linearStart, x);
+    float3 shoulderWeight = step(shoulderStart, x);
+    float3 linearWeight = 1.0 - toeWeight - shoulderWeight;
+    float3 toe = linearStart
+        * pow(max(x / linearStart, 0.0), blackTightness)
+        + blackPedestal;
+    float3 linearSegment = linearStart + contrast * (x - linearStart);
+    float3 shoulder = maxDisplayBrightness
+        - (maxDisplayBrightness - shoulderLinearEnd)
+        * exp(shoulderExponent * (x - shoulderStart));
+    return saturate(
+        toe * toeWeight
+        + linearSegment * linearWeight
+        + shoulder * shoulderWeight);
+}
+
+float3 EfPostAgxSigmoid(float3 x)
+{
+    float3 x2 = x * x;
+    float3 x4 = x2 * x2;
+    return 15.5 * x4 * x2
+        - 40.14 * x4 * x
+        + 31.96 * x4
+        - 6.868 * x2 * x
+        + 0.4298 * x2
+        + 0.1191 * x
+        - 0.00232;
+}
+
+float3 EfPostAgxTonemap(float3 color)
+{
+    const float3x3 inset = {
+        0.842479, 0.042328, 0.042376,
+        0.078434, 0.878469, 0.078434,
+        0.079224, 0.079166, 0.879143
+    };
+    const float3x3 outset = {
+         1.196879, -0.052897, -0.052972,
+        -0.098021,  1.151903, -0.098043,
+        -0.099030, -0.098961,  1.151074
+    };
+    const float minimumEv = -12.47393;
+    const float maximumEv = 4.026069;
+
+    float3 encoded = mul(inset, max(color, 0.0));
+    encoded = (log2(max(encoded, 1e-10)) - minimumEv)
+        / (maximumEv - minimumEv);
+    encoded = EfPostAgxSigmoid(saturate(encoded));
+
+    float luminance = dot(encoded, float3(0.2126, 0.7152, 0.0722));
+    encoded = lerp(
+        luminance.xxx,
+        encoded,
+        EfPostControllerAgxSaturation(EF_POST_AGX_SATURATION));
+    encoded = pow(
+        max(encoded, 1e-5),
+        EfPostControllerAgxContrast(EF_POST_AGX_CONTRAST));
+    return saturate(mul(outset, encoded));
+}
+
+float3 EfPostNeutralTonemap(float3 color)
+{
+    float minimumChannel = min(min(color.r, color.g), color.b);
+    float offset = minimumChannel < 0.08
+        ? minimumChannel - 6.25 * minimumChannel * minimumChannel
+        : 0.04;
+    color = max(color - offset, 0.0);
+
+    float peak = max(max(color.r, color.g), color.b);
+    float compressionStart =
+        EfPostControllerNeutralShoulder(EF_POST_NEUTRAL_SHOULDER);
+    if (peak < compressionStart)
+        return color;
+
+    float distanceToWhite = 1.0 - compressionStart;
+    float newPeak = 1.0
+        - distanceToWhite * distanceToWhite
+        / max(peak + distanceToWhite - compressionStart, 1e-5);
+    color *= newPeak / max(peak, 1e-5);
+
+    float desaturation = EfPostControllerNeutralDesaturation(
+        EF_POST_NEUTRAL_DESATURATION);
+    float desaturationWeight = 1.0
+        - 1.0 / (desaturation * max(peak - newPeak, 0.0) + 1.0);
+    return saturate(lerp(color, newPeak.xxx, desaturationWeight));
+}
+
+float3 EfPostAcesCurve(float3 color)
+{
+    float3 numerator = color * (2.51 * color + 0.03);
+    float3 denominator = color * (2.43 * color + 0.59) + 0.14;
+    return numerator / max(denominator, 1e-5);
+}
+
+float3 EfPostAcesTonemap(float3 color)
+{
+    float whitePoint = EfPostControllerAcesWhitePoint(
+        EF_POST_ACES_WHITE_POINT);
+    float whiteScale = EfPostAcesCurve(whitePoint.xxx).r;
+    return saturate(EfPostAcesCurve(max(color, 0.0)) / max(whiteScale, 1e-5));
+}
+
+float EfPostStandardIlluminantY(float x)
+{
+    return 2.87 * x - 3.0 * x * x - 0.27509507;
+}
+
+float3 EfPostCIExyToLms(float x, float y)
+{
+    float safeY = max(y, 1e-4);
+    float X = x / safeY;
+    float Y = 1.0;
+    float Z = (1.0 - x - y) / safeY;
+    return float3(
+        0.7328 * X + 0.4296 * Y - 0.1624 * Z,
+       -0.7036 * X + 1.6975 * Y + 0.0061 * Z,
+        0.0030 * X + 0.0136 * Y + 0.9834 * Z);
+}
+
+float3 EfPostApplyWhiteBalance(float3 color)
+{
+    float temperature = EfPostControllerWhiteBalanceTemperature(
+        EF_POST_WHITE_BALANCE_TEMPERATURE);
+    float tint = EfPostControllerWhiteBalanceTint(
+        EF_POST_WHITE_BALANCE_TINT);
+
+    float scaledTemperature = temperature * (10.0 / 6.0);
+    float x = 0.31271 - scaledTemperature
+        * (scaledTemperature < 0.0 ? 0.10 : 0.05);
+    float y = EfPostStandardIlluminantY(x) + tint * (10.0 / 6.0) * 0.05;
+    float3 targetWhite = EfPostCIExyToLms(x, y);
+    float3 balance = float3(0.949237, 1.03542, 1.08728)
+        / max(targetWhite, 1e-4);
+
+    const float3x3 rgbToLms = {
+        0.390405, 0.549941, 0.008926,
+        0.070842, 0.963172, 0.001358,
+        0.023109, 0.128021, 0.936245
+    };
+    const float3x3 lmsToRgb = {
+         2.85847,  -1.62879,  -0.024891,
+        -0.210182,  1.15820,   0.000324,
+        -0.041812, -0.118169,  1.06867
+    };
+    float3 lms = mul(rgbToLms, max(color, 0.0));
+    return max(mul(lmsToRgb, lms * balance), 0.0);
+}
+
+float3 EfPostApplyCommonGrade(float3 color)
+{
+    color *= exp2(EfPostControllerExposure(EF_POST_EXPOSURE_EV));
+    color = EfPostApplyWhiteBalance(color);
+
+    float logPivot = log2(0.18);
+    float3 logColor = log2(max(color, 1e-5));
+    color = exp2(
+        (logColor - logPivot)
+        * EfPostControllerContrast(EF_POST_CONTRAST)
+        + logPivot);
+
+    float luminance = dot(color, float3(0.2126, 0.7152, 0.0722));
+    return max(lerp(
+        luminance.xxx,
+        color,
+        EfPostControllerSaturation(EF_POST_SATURATION)), 0.0);
+}
+
+float3 EfPostApplySelectedTonemap(float3 color)
+{
+    float weightGt = saturate(EfPostModeGt);
+    float weightAgx = saturate(EfPostModeAgx);
+    float weightNeutral = saturate(EfPostModeNeutral);
+    float weightAces = saturate(EfPostModeAces);
+    float alternateWeight =
+        weightGt + weightAgx + weightNeutral + weightAces;
+    float weightLog2 = saturate(1.0 - alternateWeight);
+    float weightSum = max(weightLog2 + alternateWeight, 1e-5);
+
+    return (
+        EfPostLog2Tonemap(color) * weightLog2
+        + EfPostGtTonemap(color) * weightGt
+        + EfPostAgxTonemap(color) * weightAgx
+        + EfPostNeutralTonemap(color) * weightNeutral
+        + EfPostAcesTonemap(color) * weightAces
+    ) / weightSum;
+}
+
+float EfPostInterleavedGradientNoise(float2 pixelPosition)
+{
+    float seed = dot(
+        pixelPosition,
+        float2(0.06711056, 0.00583715));
+    return frac(52.9829189 * frac(seed));
+}
+
+float3 EfPostApplyDither(float3 color, float2 uv)
+{
+    float strength = EfPostControllerDitherStrength(
+        EF_POST_DITHER_STRENGTH);
+    float2 pixelPosition = floor(
+        uv * max(EfPostViewportSize, 1.0));
+    float noise = EfPostInterleavedGradientNoise(pixelPosition) - 0.5;
+    return saturate(color + noise * (strength / 255.0));
+}
+
+float3 EfPostApplyAdaptiveSharpen(float2 uv)
+{
+    float2 texel = 1.0 / max(EfPostViewportSize, 1.0);
+    float2 centerUv = uv + texel * 0.5;
+    float3 center = tex2D(EfPostToneMapSampler, centerUv).rgb;
+    float strength = EfPostControllerSharpenStrength(
+        EF_POST_SHARPEN_STRENGTH);
+    if (strength <= 1e-4)
+        return center;
+
+    float3 north = tex2D(
+        EfPostToneMapSampler, centerUv + float2(0.0, -texel.y)).rgb;
+    float3 south = tex2D(
+        EfPostToneMapSampler, centerUv + float2(0.0, texel.y)).rgb;
+    float3 west = tex2D(
+        EfPostToneMapSampler, centerUv + float2(-texel.x, 0.0)).rgb;
+    float3 east = tex2D(
+        EfPostToneMapSampler, centerUv + float2(texel.x, 0.0)).rgb;
+
+    float3 localMinimum = min(center, min(min(north, south), min(west, east)));
+    float3 localMaximum = max(center, max(max(north, south), max(west, east)));
+    float3 localRange = max(localMaximum - localMinimum, 1e-5);
+    float localContrast = dot(localRange, float3(0.2126, 0.7152, 0.0722));
+    float adaptation = rcp(1.0 + localContrast * 4.0);
+    float3 neighborhood = (north + south + west + east) * 0.25;
+    float3 sharpened = center
+        + (center - neighborhood) * strength * adaptation;
+    float3 overshoot = localRange * (0.08 * strength);
+    return clamp(
+        sharpened,
+        localMinimum - overshoot,
+        localMaximum + overshoot);
+}
+
+float4 EfPostCompositePS(float2 uv : TEXCOORD0) : COLOR0
+{
+    float2 fullTexel = 1.0 / max(EfPostViewportSize, 1.0);
+    float4 scene = tex2D(EfPostSceneSampler, uv + fullTexel * 0.5);
+    float3 sourceLinear = EfPostSrgbToLinear(scene.rgb);
+    float3 bloom = tex2D(
+        EfPostBloomUp0Sampler, uv + fullTexel).rgb;
+    bloom *= EfPostControllerBloomIntensity(EF_POST_BLOOM_INTENSITY);
+    bloom *= EfPostControllerBloomTint(EF_POST_BLOOM_TINT);
+
+    // Bloom belongs to the scene-referred signal. Tone mapping must compress
+    // the combined HDR result, otherwise the glow can clip after composition.
+    float3 hdrColor = sourceLinear + bloom;
+    hdrColor = EfPostApplyCommonGrade(hdrColor);
+    float3 color = EfPostApplySelectedTonemap(hdrColor);
+    color = lerp(color, sourceLinear, saturate(EfPostModeOriginal));
+    float3 bloomView = max(bloom, 0.0);
+    color = lerp(color, bloomView, saturate(EfPostBloomView));
+    return float4(color, scene.a);
+}
+
+float4 EfPostFinalPS(float2 uv : TEXCOORD0) : COLOR0
+{
+    float2 fullTexel = 1.0 / max(EfPostViewportSize, 1.0);
+    float alpha = tex2D(
+        EfPostToneMapSampler, uv + fullTexel * 0.5).a;
+    float3 color = EfPostApplyAdaptiveSharpen(uv);
+    color = saturate(EfPostLinearToSrgb(color));
+    color = EfPostApplyDither(color, uv);
+    return float4(color, alpha);
+}
+
+#define EF_POST_PASS(Name, PixelShaderFunction) \
+pass Name < string Script = "Draw=Buffer;"; > { \
+    AlphaBlendEnable = false; \
+    ZEnable = false; \
+    ZWriteEnable = false; \
+    VertexShader = compile vs_3_0 EfPostVS(); \
+    PixelShader = compile ps_3_0 PixelShaderFunction(); \
+}
+
+technique EndfieldPost <
+    string Script =
+        "RenderColorTarget0=EfPostSceneMap;"
+        "RenderDepthStencilTarget=EfPostDepthBuffer;"
+        "ClearSetColor=EfPostClearColor;"
+        "ClearSetDepth=EfPostClearDepth;"
+        "Clear=Color;"
+        "Clear=Depth;"
+        "ScriptExternal=Color;"
+
+        "ClearSetColor=EfPostWorkClearColor;"
+        "RenderColorTarget0=EfPostBloom0;"
+        "RenderDepthStencilTarget=;"
+        "Clear=Color;"
+        "Pass=BloomPrefilter;"
+        "RenderColorTarget0=EfPostBloom1;Clear=Color;Pass=BloomDown1;"
+        "RenderColorTarget0=EfPostBloom2;Clear=Color;Pass=BloomDown2;"
+        "RenderColorTarget0=EfPostBloom3;Clear=Color;Pass=BloomDown3;"
+        "RenderColorTarget0=EfPostBloom4;Clear=Color;Pass=BloomDown4;"
+        "RenderColorTarget0=EfPostBloomBlurTemp;Clear=Color;Pass=BloomBlurH;"
+        "RenderColorTarget0=EfPostBloomBlur;Clear=Color;Pass=BloomBlurV;"
+        "RenderColorTarget0=EfPostBloomUp3;Clear=Color;Pass=BloomUp3;"
+        "RenderColorTarget0=EfPostBloomUp2;Clear=Color;Pass=BloomUp2;"
+        "RenderColorTarget0=EfPostBloomUp1;Clear=Color;Pass=BloomUp1;"
+        "RenderColorTarget0=EfPostBloomUp0;Clear=Color;Pass=BloomUp0;"
+
+        "RenderColorTarget0=EfPostToneMap;"
+        "Clear=Color;"
+        "Pass=Composite;"
+        "RenderColorTarget0=;"
+        "RenderDepthStencilTarget=;"
+        "Pass=Final;";
+> {
+    EF_POST_PASS(BloomPrefilter, EfPostBloomPrefilterPS)
+    EF_POST_PASS(BloomDown1, EfPostBloomDown1PS)
+    EF_POST_PASS(BloomDown2, EfPostBloomDown2PS)
+    EF_POST_PASS(BloomDown3, EfPostBloomDown3PS)
+    EF_POST_PASS(BloomDown4, EfPostBloomDown4PS)
+    EF_POST_PASS(BloomBlurH, EfPostBloomBlurHorizontalPS)
+    EF_POST_PASS(BloomBlurV, EfPostBloomBlurVerticalPS)
+    EF_POST_PASS(BloomUp3, EfPostBloomUp3PS)
+    EF_POST_PASS(BloomUp2, EfPostBloomUp2PS)
+    EF_POST_PASS(BloomUp1, EfPostBloomUp1PS)
+    EF_POST_PASS(BloomUp0, EfPostBloomUp0PS)
+    EF_POST_PASS(Composite, EfPostCompositePS)
+    EF_POST_PASS(Final, EfPostFinalPS)
+}
+
+#endif

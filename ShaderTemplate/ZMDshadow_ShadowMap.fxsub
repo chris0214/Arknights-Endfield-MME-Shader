@@ -1,0 +1,241 @@
+////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//  HgShadow_ShadowMap.fxsub : HgShadow シャドウマップ作成
+//  ( HgShadow.fx から呼び出されます．オフスクリーン描画用)
+//  作成: 針金P
+//
+////////////////////////////////////////////////////////////////////////////////////////////////
+// パラメータ宣言
+
+#define HGSHADOW_MAPDRAW
+
+// HgShadowの必要なシャドウマップパラメータを取り込む
+#include "HgShadow_Header.fxh"
+
+
+// 透過値に対する深度読み取り閾値
+float AlphaClipThreshold = ShadowAlphaThreshold;
+
+// 座標変換行列
+float4x4 WorldMatrix : WORLD;
+
+// マテリアル色
+float4 MaterialDiffuse : DIFFUSE  < string Object = "Geometry"; >;
+float4 EdgeColor       : EDGECOLOR;
+
+bool use_texture;  // テクスチャの有無
+bool opadd;        // 加算合成フラグ
+
+// オブジェクトのテクスチャ
+texture ObjectTexture: MATERIALTEXTURE;
+sampler ObjTexSampler = sampler_state {
+    texture = <ObjectTexture>;
+    MINFILTER = LINEAR;
+    MAGFILTER = LINEAR;
+    MIPFILTER = LINEAR;
+    ADDRESSU  = WRAP;
+    ADDRESSV  = WRAP;
+};
+
+
+// 画面の4面領域判定の補正値
+static float OffsetX = 1.0f / float(SMAPSIZE_WIDTH);
+static float OffsetY = 1.0f / float(SMAPSIZE_HEIGHT);
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+//MMM対応
+
+#ifndef MIKUMIKUMOVING
+    struct VS_INPUT{
+        float4 Pos    : POSITION;
+        float2 Tex    : TEXCOORD0;
+    };
+    #define MMM_SKINNING
+    #define GETPOS  (IN.Pos)
+#else
+    #define VS_INPUT  MMM_SKINNING_INPUT
+    #define MMM_SKINNING  MMM_SKINNING_OUTPUT SkinOut = MMM_SkinnedPositionNormal(IN.Pos, IN.Normal, IN.BlendWeight, IN.BlendIndices, IN.SdefC, IN.SdefR0, IN.SdefR1);
+    #define GETPOS  (SkinOut.Position)
+#endif
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// Zプロット描画
+
+struct VS_OUTPUT {
+    float4 Pos  : POSITION;    // 射影変換座標
+    float4 PPos : TEXCOORD0;   // 射影変換座標
+    float2 Tex  : TEXCOORD1;   // テクスチャ
+};
+
+// 頂点シェーダ
+VS_OUTPUT VS_ShadowMap(VS_INPUT IN, uniform int mapIndex)
+{
+    VS_OUTPUT Out = (VS_OUTPUT)0; 
+    MMM_SKINNING
+
+    // ワールド座標
+    float4 WPos = mul( GETPOS, WorldMatrix );
+
+    // ライト視点によるワールドビュー射影変換
+    Out.Pos = HgShadow_GetShadowMapLightProjPosition(WPos, mapIndex);
+
+    // 分割した各マップに割り当てる
+    if( mapIndex == 0 ){
+        Out.Pos.x = (Out.Pos.x - Out.Pos.w) * 0.5f;
+        Out.Pos.y = (Out.Pos.y + Out.Pos.w) * 0.5f;
+    }else if( mapIndex == 1 ){
+        Out.Pos.x = (Out.Pos.x + Out.Pos.w) * 0.5f;
+        Out.Pos.y = (Out.Pos.y + Out.Pos.w) * 0.5f;
+    }else if( mapIndex == 2 ){
+        Out.Pos.x = (Out.Pos.x - Out.Pos.w) * 0.5f;
+        Out.Pos.y = (Out.Pos.y - Out.Pos.w) * 0.5f;
+    }else if( mapIndex == 3 ){
+        Out.Pos.x = (Out.Pos.x + Out.Pos.w) * 0.5f;
+        Out.Pos.y = (Out.Pos.y - Out.Pos.w) * 0.5f;
+    }
+    Out.PPos = Out.Pos;
+
+    // テクスチャ座標
+    Out.Tex = IN.Tex;
+
+    return Out;
+}
+
+// ピクセルシェーダ
+float4 PS_ShadowMap(VS_OUTPUT IN, uniform int mapIndex, uniform bool isObj) : COLOR
+{
+    // 割り当てた領域以外をクリップ
+    if( mapIndex == 0 ){
+        clip( -IN.PPos.x/IN.PPos.w + OffsetX );
+        clip(  IN.PPos.y/IN.PPos.w - OffsetY );
+    }else if( mapIndex == 1 ){
+        clip(  IN.PPos.x/IN.PPos.w - OffsetX );
+        clip(  IN.PPos.y/IN.PPos.w - OffsetY );
+    }else if( mapIndex == 2 ){
+        clip( -IN.PPos.x/IN.PPos.w + OffsetX );
+        clip( -IN.PPos.y/IN.PPos.w + OffsetY );
+    }else if( mapIndex == 3 ){
+        clip(  IN.PPos.x/IN.PPos.w - OffsetX );
+        clip( -IN.PPos.y/IN.PPos.w + OffsetY );
+    }
+
+    // 加算合成モデルはシャドウマップには描画しない
+    clip( !opadd - 0.001f );
+
+    if( isObj ){
+        // α値
+        float alpha = MaterialDiffuse.a;
+
+        // α値が0.98の材質はシャドウマップには描画しない
+        clip(abs(alpha - 0.98f) - 0.00001f);
+
+        if ( use_texture ) {
+            // テクスチャ透過値適用
+            alpha *= tex2D( ObjTexSampler, IN.Tex ).a;
+        }
+        // α値が閾値以下の箇所はシャドウマップには描画しない
+        clip(alpha - AlphaClipThreshold);
+    }else{
+        clip(EdgeColor.a - AlphaClipThreshold);
+    }
+
+    // Z値
+    //float z = IN.PPos.z / IN.PPos.w;
+    float z = IN.PPos.z;
+
+    return float4(z, 0, 0, 1);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+// テクニック
+
+#ifndef MIKUMIKUMOVING
+// オブジェクト描画(セルフシャドウなしの時は描画しない)
+technique DepthTec0 < string MMDPass = "object"; >{}
+#else
+// オブジェクト描画(セルフシャドウなし)
+technique DepthTec0 < string MMDPass = "object"; bool UseSelfShadow = false; >
+{
+    pass DrawObject0 {
+        AlphaBlendEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_ShadowMap(0);
+        PixelShader  = compile ps_3_0 PS_ShadowMap(0, true);
+    }
+    pass DrawObject1 {
+        AlphaBlendEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_ShadowMap(1);
+        PixelShader  = compile ps_3_0 PS_ShadowMap(1, true);
+    }
+    pass DrawObject2 {
+        AlphaBlendEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_ShadowMap(2);
+        PixelShader  = compile ps_3_0 PS_ShadowMap(2, true);
+    }
+    pass DrawObject3 {
+        AlphaBlendEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_ShadowMap(3);
+        PixelShader  = compile ps_3_0 PS_ShadowMap(3, true);
+    }
+}
+#endif
+
+// オブジェクト描画(セルフシャドウあり)
+technique DepthTecSS0 < string MMDPass = "object_ss"; >
+{
+    pass DrawObject0 {
+        AlphaBlendEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_ShadowMap(0);
+        PixelShader  = compile ps_3_0 PS_ShadowMap(0, true);
+    }
+    pass DrawObject1 {
+        AlphaBlendEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_ShadowMap(1);
+        PixelShader  = compile ps_3_0 PS_ShadowMap(1, true);
+    }
+    pass DrawObject2 {
+        AlphaBlendEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_ShadowMap(2);
+        PixelShader  = compile ps_3_0 PS_ShadowMap(2, true);
+    }
+    pass DrawObject3 {
+        AlphaBlendEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_ShadowMap(3);
+        PixelShader  = compile ps_3_0 PS_ShadowMap(3, true);
+    }
+}
+
+
+#if DrawShadowMapEdge==1
+// エッジ描画
+technique DepthTecEdge < string MMDPass = "edge"; >
+{
+    pass DrawObject0 {
+        AlphaBlendEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_ShadowMap(0);
+        PixelShader  = compile ps_3_0 PS_ShadowMap(0, false);
+    }
+    pass DrawObject1 {
+        AlphaBlendEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_ShadowMap(1);
+        PixelShader  = compile ps_3_0 PS_ShadowMap(1, false);
+    }
+    pass DrawObject2 {
+        AlphaBlendEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_ShadowMap(2);
+        PixelShader  = compile ps_3_0 PS_ShadowMap(2, false);
+    }
+    pass DrawObject3 {
+        AlphaBlendEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_ShadowMap(3);
+        PixelShader  = compile ps_3_0 PS_ShadowMap(3, false);
+    }
+}
+#else
+// 輪郭は描画しない
+technique EdgeTec < string MMDPass = "edge"; > { }
+#endif
+
+// 地面影は描画しない
+technique ShadowTec < string MMDPass = "shadow"; > { }
+

@@ -1,0 +1,388 @@
+////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//  HgShadow_ViewportMap.fxsub : HgShadow 影生成用画面マップ作成
+//  ( HgShadow.fx から呼び出されます．オフスクリーン描画用)
+//  作成: 針金P
+//
+////////////////////////////////////////////////////////////////////////////////////////////////
+// パラメータ宣言
+
+#define HGSHADOW_MAPDRAW
+#define HS_SNOW_GEOMETRY_ONLY  1
+
+// HgShadowの必要なシャドウマップパラメータを取り込む
+#include "HgShadow_Header.fxh"
+
+// 透過値に対する深度読み取り閾値
+float AlphaClipThreshold = ShadowAlphaThreshold;
+
+// コントロールパラメータ
+float HgShadow_BlurUp   : CONTROLOBJECT < string name = "(self)"; string item = "ShadowBlur+"; >;
+float HgShadow_BlurDown : CONTROLOBJECT < string name = "(self)"; string item = "ShadowBlur-"; >;
+static float BlurScale = lerp(1.0f+20.0f*HgShadow_BlurUp, -5.0f, HgShadow_BlurDown);
+
+#ifndef MIKUMIKUMOVING
+//float AcsTr : CONTROLOBJECT < string name = "(OffscreenOwner)"; string item = "Tr"; >;
+float AcsSi : CONTROLOBJECT < string name = "(OffscreenOwner)"; string item = "Si"; >;
+#if (ShadowMapType == CLSPSM)
+float AcsRy : CONTROLOBJECT < string name = "(OffscreenOwner)"; string item = "Ry"; >;
+#else
+const float AcsRy = -1.0f;
+#endif
+static float Scale = AcsSi * 0.1f * saturate(BlurScale);
+static float NearMax1 = saturate(1.0f - degrees(AcsRy)) * 1.5f - 0.5f;
+static float NearMax2 = 0.11f + 1.39f * saturate(degrees(AcsRy) + 1.0f);
+#else
+shared float HgShadow_MMM_BlurPower;
+shared float HgShadow_MMM_NearDistParam;
+static float Scale = HgShadow_MMM_BlurPower * saturate(BlurScale);
+#if (ShadowMapType == CLSPSM)
+static float MMM_NearDistParam = HgShadow_MMM_NearDistParam;
+#else
+static float MMM_NearDistParam = 2.0f*HgShadow_MMM_NearDistParam - 1.0f;
+#endif
+static float NearMax1 = saturate(1.0f - MMM_NearDistParam) * 1.5f - 0.5f;
+static float NearMax2 = 0.11f + 1.39f * saturate(MMM_NearDistParam + 1.0f);
+#endif
+
+#if SoftShadowQuality > 0
+// シャドウマップのマルチサンプリングを行う時のサンプリング間隔
+static float2 smpStep = float2(1.0f/SMAPSIZE_WIDTH, 1.0f/SMAPSIZE_HEIGHT) * min(Scale, 1.0f);
+static float2 SampStep[13] = { float2(0.0f, 0.0f),
+                               float2(-smpStep.x, 0.0f),
+                               float2( smpStep.x, 0.0f),
+                               float2( 0.0f,-smpStep.y),
+                               float2( 0.0f, smpStep.y),
+                               float2(-smpStep.x,-smpStep.y),
+                               float2( smpStep.x, smpStep.y),
+                               float2(-smpStep.x, smpStep.y),
+                               float2( smpStep.x,-smpStep.y),
+                               float2(-2.0f*smpStep.x, 0.0f),
+                               float2( 2.0f*smpStep.x, 0.0f),
+                               float2( 0.0f,-2.0f*smpStep.y),
+                               float2( 0.0f, 2.0f*smpStep.y) };
+
+#ifndef MIKUMIKUMOVING
+static float2 smpStepMMD = float2(1.0f/2048.0f, 1.0f/2048.0f) * min(Scale, 1.0f);
+static float2 SampStepMMD[13] = { float2(0.0f, 0.0f),
+                                  float2(-smpStepMMD.x, 0.0f),
+                                  float2( smpStepMMD.x, 0.0f),
+                                  float2( 0.0f,-smpStepMMD.y),
+                                  float2( 0.0f, smpStepMMD.y),
+                                  float2(-smpStepMMD.x,-smpStepMMD.y),
+                                  float2( smpStepMMD.x, smpStepMMD.y),
+                                  float2(-smpStepMMD.x, smpStepMMD.y),
+                                  float2( smpStepMMD.x,-smpStepMMD.y),
+                                  float2(-2.0f*smpStepMMD.x, 0.0f),
+                                  float2( 2.0f*smpStepMMD.x, 0.0f),
+                                  float2( 0.0f,-2.0f*smpStepMMD.y),
+                                  float2( 0.0f, 2.0f*smpStepMMD.y) };
+#endif
+#endif
+
+
+// 座標変換行列
+float4x4 ViewProjMatrix  : VIEWPROJECTION;
+float4x4 WorldMatrix     : WORLD;
+float4x4 ViewMatrix      : VIEW;
+float4x4 ProjMatrix      : PROJECTION;
+float4x4 LightWorldViewProjMatrix : WORLDVIEWPROJECTION < string Object = "Light"; >;
+
+float3 LightDirection : DIRECTION < string Object = "Light"; >;
+float3 CameraPosition : POSITION  < string Object = "Camera"; >;
+
+// マテリアル色
+float4 MaterialDiffuse : DIFFUSE  < string Object = "Geometry"; >;
+float  SpecularPower   : SPECULARPOWER < string Object = "Geometry"; >;
+
+bool use_texture;  // テクスチャの有無
+bool use_toon;     //トゥーンの有無
+bool opadd;        // 加算合成フラグ
+
+#define SKII1  1500
+#define SKII2  8000
+
+// オブジェクトのテクスチャ
+texture ObjectTexture: MATERIALTEXTURE;
+sampler ObjTexSampler = sampler_state {
+    texture = <ObjectTexture>;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MIPFILTER = LINEAR;
+    ADDRESSU  = WRAP;
+    ADDRESSV  = WRAP;
+};
+
+// HgShadowによるCLSPSMシャドウマップバッファ
+shared texture ZMDshadow_SMap : OFFSCREENRENDERTARGET;
+sampler HgShadow_ShadowMapSamp = sampler_state {
+    texture = <ZMDshadow_SMap>;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = NONE;
+    AddressU  = CLAMP;
+    AddressV  = CLAMP;
+};
+
+// MMD標準シャドウマップ
+#ifndef MIKUMIKUMOVING
+sampler MMDShadowMapSamp : register(s0); // シャドウバッファのサンプラ。"register(s0)"なのはMMDがs0を使っているから
+bool parthf;  // パースペクティブフラグ
+#endif
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+//MMM対応
+
+#ifndef MIKUMIKUMOVING
+    struct VS_INPUT{
+        float4 Pos    : POSITION;
+        float2 Tex    : TEXCOORD0;
+        float3 Normal : NORMAL;
+    };
+    #define MMM_SKINNING
+    #define GETPOS     (IN.Pos)
+    #define GETNORMAL  (IN.Normal)
+    #define GET_VPMAT(p) (ViewProjMatrix)
+#else
+    #define VS_INPUT  MMM_SKINNING_INPUT
+    #define MMM_SKINNING  MMM_SKINNING_OUTPUT SkinOut = MMM_SkinnedPositionNormal(IN.Pos, IN.Normal, IN.BlendWeight, IN.BlendIndices, IN.SdefC, IN.SdefR0, IN.SdefR1);
+    #define GETPOS     (SkinOut.Position)
+    #define GETNORMAL  (SkinOut.Normal)
+    #define GET_VPMAT(p) (MMM_IsDinamicProjection ? mul(ViewMatrix, MMM_DynamicFov(ProjMatrix, length(CameraPosition-p.xyz))) : ViewProjMatrix)
+#endif
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+// オブジェクトのシャドウ描画
+
+struct VS_OUTPUT {
+    float4 Pos         : POSITION;     // 射影変換座標
+    float4 ZCalcTex0   : TEXCOORD0;    // Z値0
+    float4 ZCalcTex1   : TEXCOORD1;    // Z値1
+    float4 ZCalcTex2   : TEXCOORD2;    // Z値2
+    float4 ZCalcTex3   : TEXCOORD3;    // Z値3
+    float4 MMDZCalcTex : TEXCOORD4;    // Z値 標準マップ
+    float3 Eye         : TEXCOORD5;    // カメラとの相対位置
+    float2 Tex         : TEXCOORD6;    // テクスチャ
+    float3 Normal      : TEXCOORD7;    // 法線
+};
+
+// 頂点シェーダ
+VS_OUTPUT VS_Object(VS_INPUT IN, uniform bool useSelfShadow)
+{
+    VS_OUTPUT Out = (VS_OUTPUT)0;
+    MMM_SKINNING
+
+    // ワールド座標
+    float4 WPos = mul( GETPOS, WorldMatrix );
+
+    // カメラ視点のビュー射影変換
+    Out.Pos = mul( WPos, GET_VPMAT(WPos) );
+
+    if(useSelfShadow){
+        // ライト視点によるワールドビュー射影変換
+        Out.ZCalcTex0 = HgShadow_GetShadowMapLightProjPosition( WPos, 0 );
+        Out.ZCalcTex1 = HgShadow_GetShadowMapLightProjPosition( WPos, 1 );
+        Out.ZCalcTex2 = HgShadow_GetShadowMapLightProjPosition( WPos, 2 );
+        Out.ZCalcTex3 = HgShadow_GetShadowMapLightProjPosition( WPos, 3 );
+        Out.MMDZCalcTex = mul( GETPOS, LightWorldViewProjMatrix );
+    }
+
+    // カメラとの相対位置
+    Out.Eye = CameraPosition - WPos.xyz;
+
+    // 頂点法線
+    Out.Normal = normalize( mul( GETNORMAL, (float3x3)WorldMatrix ) );
+
+    // テクスチャ座標
+    Out.Tex = IN.Tex;
+
+    return Out;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+
+// シャドウマップから遮蔽率と遮蔽距離を求める
+float2 CalcShadowCompDist(float4 ZCalcTex, float depth, float persRate, float angRate, float NearDistParam)
+{
+    float comp = 0.0f;  // 遮蔽率
+    float dist = 0.0f;  // 遮蔽距離
+
+    if(ZCalcTex.w < 3.5f){
+    // CLSPSMマップ
+        // 遮蔽判定の誤りを防ぐための許容誤差
+        float mapRate = ZCalcTex.w * 1.5f + 1.0f;
+        float err = clamp(0.00075f * (depth - 10.0f) * persRate * angRate * mapRate, 0.03f, 5.0f);
+
+        // 遮蔽距離
+        dist = max( ZCalcTex.z - tex2D(HgShadow_ShadowMapSamp, ZCalcTex.xy).r, 0.0f );
+
+        // 遮蔽率
+        comp = smoothstep(0.0f, NearDistParam, saturate( dist * 10000.0f - err ));
+
+        // シャドウマップのマルチサンプリング
+        #if SoftShadowQuality > 0
+        #if ShadowMapSampCount > 1
+        comp += comp;
+        dist += dist;
+        [unroll]
+        for(int i=1; i<ShadowMapSampCount; i++){
+            float dist1 = max( ZCalcTex.z - tex2D(HgShadow_ShadowMapSamp, ZCalcTex.xy+SampStep[i]/mapRate).r, 0.0f );
+            comp += smoothstep(0.0f, NearDistParam*0.5f, saturate( dist1 * 10000.0f -  err * 1.5f ));
+            dist += dist1;
+        }
+        comp /= float(ShadowMapSampCount + 1);
+        dist /= float(ShadowMapSampCount + 1);
+        comp = smoothstep(0.1f, 1.0f, comp);
+        #endif
+        #endif
+
+    #ifndef MIKUMIKUMOVING
+    #if UseMMDShadowMap>0
+    }else if(ZCalcTex.w < 4.5f){
+    // MMD標準マップ
+        dist = max( min(ZCalcTex.z, 1.0f) - tex2D(MMDShadowMapSamp, ZCalcTex.xy).r, 0.0f );
+        if(parthf) {
+            // セルフシャドウ mode2
+            comp = saturate( dist * SKII2 * ZCalcTex.y - 0.3f );
+        } else {
+            // セルフシャドウ mode1
+            comp = saturate( dist * SKII1 - 0.3f);
+        }
+
+        // MMD標準マップのマルチサンプリング
+        #if SoftShadowQuality > 0
+        #if ShadowMapSampCount > 1
+        comp += comp;
+        dist += dist;
+        if(parthf) {
+            // セルフシャドウ mode2
+            [unroll]
+            for(int i=1; i<ShadowMapSampCount; i++){
+                float dist1 = max( min(ZCalcTex.z, 1.0f) - tex2D(MMDShadowMapSamp, ZCalcTex.xy+SampStepMMD[i]).r, 0.0f );
+                comp += saturate( dist1 * SKII2 * ZCalcTex.y - 0.6f );
+                dist += dist1;
+            }
+        } else {
+            // セルフシャドウ mode1
+            [unroll]
+            for(int i=1; i<ShadowMapSampCount; i++){
+                float dist1 = max( min(ZCalcTex.z, 1.0f) - tex2D(MMDShadowMapSamp, ZCalcTex.xy+SampStepMMD[i]).r, 0.0f );
+                comp += saturate( dist1 * SKII1 - 0.6f );
+                dist += dist1;
+            }
+        }
+        comp /= float(ShadowMapSampCount + 1);
+        dist /= float(ShadowMapSampCount + 1) * 50.0f;
+        #endif
+        #endif
+        comp = smoothstep(0.0f, 0.8f, comp);
+    #endif
+    #endif
+    }
+
+    return float2(comp, dist);
+}
+
+
+// ピクセルシェーダ
+float4 PS_Object(VS_OUTPUT IN, uniform bool useSelfShadow) : COLOR
+{
+    #ifndef MIKUMIKUMOVING
+    #if WithVolumeShadow==1
+    // シャドウボリューム材質は描画しない
+    clip(abs(10000.0f - SpecularPower) - 0.00001f);
+    #endif
+    #endif
+
+    // 加算合成モデルは描画しない
+    clip( !opadd - 0.001f );
+
+    // α値
+    float alpha = MaterialDiffuse.a;
+
+    // α値が0.98の材質は描画しない
+    //clip(abs(alpha - 0.98f) - 0.00001f);
+
+    if ( use_texture ) {
+        // テクスチャ透過値適用
+        alpha *= tex2D( ObjTexSampler, IN.Tex ).a;
+    }
+    // α値が閾値以下の箇所は描画しない
+    clip(alpha - AlphaClipThreshold);
+
+    // 深度
+    float depth = length( IN.Eye );
+
+    // ライト方向と法線のなす角
+    float LightNormal = dot(
+        normalize(IN.Normal),
+        -HgShadow_GetEffectiveLightDirection()
+    );
+
+    // カメラ方向と法線のなす角
+    //float CameraNormal = dot( normalize(IN.Normal), normalize(IN.Eye) );
+
+    float comp = 0.0f;  // 遮蔽率
+    float dist = 0.0f;  // 遮蔽距離
+
+    if(useSelfShadow){
+        // テクスチャ座標に変換
+        HgShadow_SMapDat ZPlot = HgShadow_GetShadowMapTexCoord(IN.ZCalcTex0, IN.ZCalcTex1, IN.ZCalcTex2, IN.ZCalcTex3, IN.MMDZCalcTex);
+
+        // 遮蔽判定の誤りを防ぐための許容誤差レート
+        float persRate = lerp(1.0f, 3.5f, smoothstep(0.577f, 1.732f, 1.0f/ProjMatrix._22));  // パースによるレート
+        float angRate = 1.0f / min(abs(LightNormal)+0.2f, 1.0f);                             // 照射角によるレート
+        float NearDistParam = clamp(0.9-LightNormal*NearMax1, 0.1f, NearMax2); // 近傍遮蔽の判定範囲を決めるパラメータ
+
+        // 遮蔽率と遮蔽距離(マップ境界付近は2つのマップからの線形補間)
+        float2 CompDist1 = CalcShadowCompDist(ZPlot.Tex1, depth, persRate, angRate, NearDistParam);
+        float2 CompDist2 = CalcShadowCompDist(ZPlot.Tex2, depth, persRate, angRate, NearDistParam);
+        comp = lerp(CompDist2.x, CompDist1.x, ZPlot.Weight);
+        dist = lerp(CompDist2.y, CompDist1.y, ZPlot.Weight);
+
+        // PMD・PMXのトゥーン適用(モデル描画時にも適用するのでここでは浅めに掛けておく)
+#if HS_SNOW_GEOMETRY_ONLY == 0
+        if( use_toon ){
+            comp = max(1.0f - saturate(LightNormal*6.0f), comp);
+        }
+#endif
+    }
+
+    #if SoftShadowQuality == 3
+    return float4(comp, max(BlurScale+dist*10000.0f+1.0f, -1.0f), depth, LightNormal);
+    #else
+    return float4(comp, max(BlurScale+3.0f, -1.0f), depth, LightNormal);
+    #endif
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+// テクニック
+
+// オブジェクト描画(セルフシャドウあり)
+technique MainTecBS0  < string MMDPass = "object_ss"; > {
+    pass DrawObject {
+        AlphaBlendEnable = FALSE;
+        AlphaTestEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_Object(true);
+        PixelShader  = compile ps_3_0 PS_Object(true);
+    }
+}
+
+// オブジェクト描画(セルフシャドウなし)
+technique DepthTec0 < string MMDPass = "object"; >{
+    pass DrawObject {
+        AlphaBlendEnable = FALSE;
+        AlphaTestEnable = FALSE;
+        VertexShader = compile vs_3_0 VS_Object(false);
+        PixelShader  = compile ps_3_0 PS_Object(false);
+    }
+}
+
+// 輪郭は描画しない
+technique EdgeTec < string MMDPass = "edge"; > { }
+// 地面影は描画しない
+technique ShadowTec < string MMDPass = "shadow"; > { }
+

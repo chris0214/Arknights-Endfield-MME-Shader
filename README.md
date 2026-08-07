@@ -34,8 +34,8 @@
 参考工程只用于研究算法和行为，不代表代码复制或版权转移。详见 [`AUTHORS.md`](AUTHORS.md) 与 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
 致谢：
-秋大叔@知乎：阴影以及整体渲染思路；本项目重新实现并适配 MME。
-新杨XIYAG ：PBR 高光、材质分层、LUT 和后处理思路参考
-ray-mmd：预过滤环境贴图工作流和 IBL 行为参考；保留 MIT 通知。
-針金P：HgShadow及 MMD/MME 社区：阴影与 MME 生态基础。
-SeaTran：雨水效果代码参考。
+-秋大叔@知乎：阴影以及整体渲染思路；本项目重新实现并适配 MME。
+-新杨XIYAG ：PBR 高光、材质分层、LUT 和后处理思路参考
+-ray-mmd：预过滤环境贴图工作流和 IBL 行为参考；保留 MIT 通知。
+-針金P：HgShadow及 MMD/MME 社区：阴影与 MME 生态基础。
+-SeaTran：雨水效果代码参考。

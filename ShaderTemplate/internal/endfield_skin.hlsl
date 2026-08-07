@@ -214,11 +214,6 @@ sampler2D EfSkinMainSampler = sampler_state {
 texture2D EfSkinRdTexture <
     string ResourceName = EF_SKIN_RD_TEXTURE_RESOURCE;
 >;
-#else
-texture2D EfSkinRdTexture : MATERIALTEXTURE <
-    string Format = "A8R8G8B8";
->;
-#endif
 sampler2D EfSkinRdSampler = sampler_state {
     texture = <EfSkinRdTexture>;
     MinFilter = LINEAR;
@@ -227,16 +222,12 @@ sampler2D EfSkinRdSampler = sampler_state {
     AddressU = CLAMP;
     AddressV = CLAMP;
 };
+#endif
 
 #ifdef EF_SKIN_LUT_TEXTURE_RESOURCE
 texture2D EfSkinLutTexture <
     string ResourceName = EF_SKIN_LUT_TEXTURE_RESOURCE;
 >;
-#else
-texture2D EfSkinLutTexture : MATERIALTEXTURE <
-    string Format = "A8R8G8B8";
->;
-#endif
 sampler2D EfSkinLutSampler = sampler_state {
     texture = <EfSkinLutTexture>;
     MinFilter = LINEAR;
@@ -245,6 +236,16 @@ sampler2D EfSkinLutSampler = sampler_state {
     AddressU = CLAMP;
     AddressV = CLAMP;
 };
+#endif
+
+float4 EfSkinSampleRdRamp(float coordinate)
+{
+#ifdef EF_SKIN_RD_TEXTURE_RESOURCE
+    return tex2D(EfSkinRdSampler, float2(coordinate, 0.5));
+#else
+    return float4(1.0, 1.0, 1.0, 1.0);
+#endif
+}
 
 #if EF_SKIN_ZMD_SHADOW_ENABLED || EF_SKIN_SCREEN_RIM_ENABLED
 shared texture2D EF_SKIN_SHADOW_VIEWPORT_MAP : RENDERCOLORTARGET;
@@ -356,6 +357,9 @@ float3 EfSkinDirectGGX(
 float3 EfSkinSampleLut(float3 albedoSrgb)
 {
     albedoSrgb = saturate(albedoSrgb);
+#ifndef EF_SKIN_LUT_TEXTURE_RESOURCE
+    return albedoSrgb;
+#else
 #if EF_SKIN_LUT_USE_BRG
     albedoSrgb = albedoSrgb.brg;
 #endif
@@ -374,6 +378,7 @@ float3 EfSkinSampleLut(float3 albedoSrgb)
     float3 lutColor1 = tex2D(EfSkinLutSampler,
         lutUvFinal + float2(0.03125, 0.0)).rgb;
     return lerp(lutColor0, lutColor1, lutTileLerp);
+#endif
 }
 
 #if EF_SKIN_ZMD_SHADOW_ENABLED
@@ -449,7 +454,7 @@ float4 EfSkinPS(EfSkinVaryings input, uniform bool useTexture) : COLOR0
 #endif
     float halfLambert = saturate(dot(N, L) * 0.5 + 0.5);
     halfLambert = pow(halfLambert, max(lightCurve, 1e-4));
-    float4 rd = tex2D(EfSkinRdSampler, float2(halfLambert, 0.5));
+    float4 rd = EfSkinSampleRdRamp(halfLambert);
     // RD alpha selects the light/dark branch. RGB contributes chroma only:
     // neutral black/gray/white samples must not multiply skin toward black.
     float3 rdColorSrgb = saturate(rd.rgb);

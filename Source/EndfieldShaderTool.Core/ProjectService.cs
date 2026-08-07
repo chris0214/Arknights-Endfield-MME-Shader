@@ -190,6 +190,23 @@ public static class MaterialDefaults
             CullMode = domain is ShaderDomain.Iris or ShaderDomain.EyeWhite ? CullMode.Ccw : CullMode.None,
             RampRows = domain is ShaderDomain.Cloth or ShaderDomain.Body or ShaderDomain.Prop ? 8f : 1f
         };
+        if (domain == ShaderDomain.Hair)
+            p.HighlightStrength = 1.05f;
+        if (domain == ShaderDomain.Skin)
+        {
+            p.SpecularStrength = 0.65f;
+            p.RimStrength = 1.17f;
+            p.RimColor = new ColorValue(1f, 0.82f, 0.78f);
+        }
+        if (domain == ShaderDomain.Cloth)
+        {
+            p.SpecularStrength = 2f;
+            p.SpecularBroadStrength = 1.35f;
+            p.RampBlendStrength = 0f;
+            p.RampShadowScale = 0.56f;
+            p.RampLightScale = 1.12f;
+            p.RimStrength = 0.55f;
+        }
         return p;
     }
 
@@ -233,6 +250,8 @@ public static class MaterialDefaults
         {
             profile.Textures.Matcap05.SourcePath = Existing(common, "Eff_MatCap_019.png");
             profile.Textures.Matcap07.SourcePath = Existing(common, "Eff_MatCap_019_manual_lod.png");
+            profile.Parameters.UseManualMatcapLod = profile.Textures.Matcap07.IsSelected;
+            profile.Parameters.UseFgdLut = File.Exists(Path.Combine(common, "PreIntegratedFGD_GGXDisneyDiffuse.png"));
         }
     }
 
@@ -242,12 +261,12 @@ public static class MaterialDefaults
         var t = profile.Textures;
         p.UseNormal = t.Normal.IsSelected;
         p.UseSdf = profile.Domain == ShaderDomain.Face && t.Sdf.IsSelected;
-        p.UseMatcap = profile.Domain is ShaderDomain.Cloth or ShaderDomain.Prop &&
+        p.UseMatcap = profile.Domain == ShaderDomain.Cloth &&
                       (t.Matcap05.IsSelected || t.Matcap07.IsSelected);
         p.UseMatcap05 = profile.Domain == ShaderDomain.Iris && t.Matcap05.IsSelected;
         p.UseMatcap07 = profile.Domain == ShaderDomain.Iris && t.Matcap07.IsSelected;
         p.UseHighlight = profile.Domain == ShaderDomain.Hair && t.St.IsSelected && profile.AdditionalUvCount > 0;
-        if (profile.Domain is not (ShaderDomain.Cloth or ShaderDomain.Body or ShaderDomain.Prop or ShaderDomain.Transparent))
+        if (profile.Domain != ShaderDomain.Cloth)
             p.EnableRain = false;
         if (profile.Domain is not (ShaderDomain.Iris or ShaderDomain.EyeWhite or ShaderDomain.EyeHighlight or ShaderDomain.BrowLash))
             p.EnableEyeThrough = false;

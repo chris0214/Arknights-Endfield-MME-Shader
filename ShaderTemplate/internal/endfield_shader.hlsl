@@ -1749,12 +1749,14 @@ float4 EfMainPS(EfVaryings input, float facing : VFACE,
     bool rdTbnValid;
     EfReconstructTB(input.positionWS, rdGeometryNormal, uv,
         rdTangentWS, rdBitangentWS, rdTbnValid);
+#if EF_USE_NORMAL_MAP
     if (rdTbnValid) {
         float4 rdNormalTexture = tex2D(EfNormalSampler, uv);
         float3 rdNormalTS = EfUnpackNormal(rdNormalTexture.rg, EF_BUMP_SCALE);
         float3x3 rdTBN = float3x3(rdTangentWS, rdBitangentWS, rdGeometryNormal);
         rdNormalWS = normalize(mul(rdNormalTS, rdTBN)) * rdFaceSign;
     }
+#endif
 
     float3 rdLightWS = EfNormalizeOr(
         -LightDirection, float3(0.0, 0.70710678, -0.70710678));

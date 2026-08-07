@@ -52,8 +52,20 @@ public static class ProjectValidator
                     result.Error("EYE_THROUGH_RESOURCE", $"工程开启 EyeThrough，但模板缺少通用捕获资源：{required}。请先为当前模型生成/配置它。");
             }
         }
-        if (project.IncludePostProcessing && !File.Exists(Path.Combine(project.TemplateRoot, "EndfieldPost.x")))
-            result.Error("POST_RESOURCE", "工程开启了后处理，但模板缺少 EndfieldPost.x。");
+        if (project.IncludePostProcessing)
+        {
+            foreach (var required in new[]
+                     {
+                         "EndfieldPost.x",
+                         "EndfieldPost.fx",
+                         "internal/endfield_post.fxsub",
+                         "internal/endfield_post_controls.inc"
+                     })
+            {
+                if (!File.Exists(Path.Combine(project.TemplateRoot, required.Replace('/', Path.DirectorySeparatorChar))))
+                    result.Error("POST_RESOURCE", $"工程开启了后处理，但模板缺少 {required}。");
+            }
+        }
         if (project.Model is not null && !string.IsNullOrWhiteSpace(project.HeadBone) && !project.Model.BoneNames.Contains(project.HeadBone))
             result.Warning("HEAD_BONE", $"找不到头骨 {project.HeadBone}，Face FX 仍会写入该名称，请确认模型骨骼名称。");
 
@@ -95,6 +107,11 @@ public static class ProjectValidator
         var t = profile.Textures;
         foreach (var (label, texture) in NamedTextureReferences(t))
         {
+            if (!string.IsNullOrWhiteSpace(texture.PackagePath) && !IsSafePackageRelativePath(texture.PackagePath))
+            {
+                result.Error("TEXTURE_PACKAGE_PATH", $"{profile.ProfileName} 的 {label} 包内路径不安全：{texture.PackagePath}");
+                continue;
+            }
             if (!texture.IsSelected || TextureAvailable(project, texture)) continue;
             var path = texture.SourcePath ?? texture.PackagePath ?? "(empty)";
             result.Error("TEXTURE_SOURCE_MISSING", $"{profile.ProfileName} 的 {label} 已选择，但找不到贴图文件：{path}");
@@ -107,6 +124,38 @@ public static class ProjectValidator
             result.Error("MATCAP05_TEXTURE", $"{profile.ProfileName} 启用了 MATCAP05，但没有贴图。");
         if (profile.Domain == ShaderDomain.Iris && p.UseMatcap07 && !TextureAvailable(project, t.Matcap07))
             result.Error("MATCAP07_TEXTURE", $"{profile.ProfileName} 启用了 MATCAP07，但没有贴图。");
+        if (profile.Domain == ShaderDomain.Cloth)
+        {
+            ValidateTemplateFeatureResource(
+                project,
+                profile,
+                "Cloth environment",
+                "textures/common/cloth_environment_current.dds",
+                "CLOTH_ENV_RESOURCE",
+                result);
+            if (p.UseMatcap && !TextureAvailable(project, t.Matcap05))
+                result.Error("CLOTH_MATCAP_TEXTURE", $"{profile.ProfileName} 启用了 MATCAP，但没有 MATCAP 05 贴图。");
+            if (p.UseManualMatcapLod && !TextureAvailable(project, t.Matcap07))
+                result.Error("CLOTH_MATCAP_LOD_TEXTURE", $"{profile.ProfileName} 启用了手动 MATCAP LOD，但没有 MATCAP 07 Atlas。");
+            if (p.UseFgdLut)
+                ValidateTemplateFeatureResource(
+                    project,
+                    profile,
+                    "FGD LUT",
+                    "textures/common/PreIntegratedFGD_GGXDisneyDiffuse.png",
+                    "CLOTH_FGD_RESOURCE",
+                    result);
+            if (p.EnableRain)
+            {
+                foreach (var relative in new[]
+                         {
+                             "textures/common/rain/T_actor_common_rain_02_M.png",
+                             "textures/common/rain/rain_drops.png",
+                             "textures/common/rain/rain_drops_phase.png"
+                         })
+                    ValidateTemplateFeatureResource(project, profile, "Rain", relative, "CLOTH_RAIN_RESOURCE", result);
+            }
+        }
         if (profile.Domain == ShaderDomain.Hair && p.HairUvSet == 1 && profile.AdditionalUvCount < 1)
             result.Error("UV1", $"{profile.ProfileName} 选择了 UV1，但 PMX 没有声明追加 UV1 通道。");
         if (profile.Domain == ShaderDomain.Hair && p.UseHighlight && p.HairUvSet != 1)
@@ -153,6 +202,23 @@ public static class ProjectValidator
         }
         if (p.EnableRain && profile.Domain != ShaderDomain.Cloth)
             result.Warning("RAIN_DOMAIN", $"{profile.ProfileName} 不是 Cloth，Rain 参数不会产生衣物湿润效果。");
+        if (p.UseFgdLut && profile.Domain != ShaderDomain.Cloth)
+            result.Warning("FGD_DOMAIN", $"{profile.ProfileName} 不是 Cloth，FGD LUT 参数不会生效。");
+        if (p.UseMatcap && profile.Domain != ShaderDomain.Cloth)
+            result.Warning("MATCAP_DOMAIN", $"{profile.ProfileName} 不是 Cloth，当前 Endfield 材质入口不会启用衣服 MATCAP。");
+    }
+
+    private static void ValidateTemplateFeatureResource(
+        EndfieldProject project,
+        MaterialProfile profile,
+        string feature,
+        string relativePath,
+        string code,
+        ValidationResult result)
+    {
+        var path = Path.Combine(project.TemplateRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        if (!File.Exists(path))
+            result.Error(code, $"{profile.ProfileName} 启用了 {feature}，但模板缺少资源：{relativePath}");
     }
 
     private static bool TextureAvailableForValidation(TextureReference reference)
@@ -222,28 +288,137 @@ public static class ProjectValidator
         foreach (var file in files.Where(x => shaderExtensions.Contains(Path.GetExtension(x))))
         {
             var content = File.ReadAllText(file, FileEncoding.ForShader(file));
-            if (Regex.IsMatch(content, @"[A-Za-z]:[\\/]")) result.Error("ABSOLUTE_PATH", $"Shader 包含绝对路径：{file}");
+            if (Regex.IsMatch(content, @"(?:[A-Za-z]:[\\/]|\\\\[^\\]+[\\/][^\\]+)", RegexOptions.IgnoreCase))
+                result.Error("ABSOLUTE_PATH", $"Shader 包含绝对资源路径：{file}");
             foreach (Match match in Regex.Matches(content, @"#include\s+""([^""]+)"""))
             {
                 var include = match.Groups[1].Value.Replace('/', Path.DirectorySeparatorChar);
+                if (Path.IsPathFullyQualified(include) || Path.IsPathRooted(include))
+                {
+                    result.Error("ABSOLUTE_INCLUDE", $"Shader include 必须位于角色包内：{match.Groups[1].Value}");
+                    continue;
+                }
                 var includeCandidates = effectDirectories
                     .Prepend(Path.GetDirectoryName(file)!)
                     .Select(directory => Path.GetFullPath(Path.Combine(directory, include)))
+                    .Where(candidate => IsInside(outputDirectory, candidate))
                     .Append(Path.Combine(outputDirectory, Path.GetFileName(include)));
                 if (!includeCandidates.Any(File.Exists))
                     result.Error("MISSING_INCLUDE", $"缺少 include：{match.Groups[1].Value}");
             }
-            if (file.EndsWith(".inc", StringComparison.OrdinalIgnoreCase))
+            foreach (Match match in Regex.Matches(
+                         content,
+                         @"^\s*#define\s+EF_[A-Z0-9_]+(?:TEXTURE|TEXTURE_RESOURCE)\s+""([^""]+)""",
+                         RegexOptions.Multiline))
             {
-                foreach (Match match in Regex.Matches(content, @"#define\s+EF_[A-Z0-9_]+(?:TEXTURE|TEXTURE_RESOURCE)\s+""([^""]+)"""))
+                var ownerDirectory = ShaderResourceBaseDirectory(outputDirectory, file);
+                var reference = match.Groups[1].Value.Replace('/', Path.DirectorySeparatorChar);
+                if (Path.IsPathFullyQualified(reference) || Path.IsPathRooted(reference))
                 {
-                    var ownerDirectory = Directory.GetParent(Path.GetDirectoryName(file)!)!.FullName;
-                    var resourcePath = Path.GetFullPath(Path.Combine(ownerDirectory, match.Groups[1].Value.Replace('/', Path.DirectorySeparatorChar)));
-                    if (!File.Exists(resourcePath)) result.Error("MISSING_TEXTURE", $"缺少贴图：{match.Groups[1].Value}");
+                    result.Error("ABSOLUTE_TEXTURE", $"贴图路径必须位于角色包内：{match.Groups[1].Value}");
+                    continue;
+                }
+                var resourcePath = Path.GetFullPath(Path.Combine(ownerDirectory, reference));
+                if (!IsInside(outputDirectory, resourcePath))
+                {
+                    result.Error("TEXTURE_PATH_ESCAPE", $"贴图路径超出角色包：{match.Groups[1].Value}");
+                    continue;
+                }
+                if (!File.Exists(resourcePath)) result.Error("MISSING_TEXTURE", $"缺少贴图：{match.Groups[1].Value}");
+            }
+        }
+        ValidatePresetIncludeClosures(outputDirectory, files, result);
+        return result;
+    }
+
+    private static bool IsInside(string root, string candidate)
+    {
+        var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var fullCandidate = Path.GetFullPath(candidate);
+        return fullCandidate.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ShaderResourceBaseDirectory(string outputDirectory, string shaderFile)
+    {
+        var packageRoot = Path.GetFullPath(outputDirectory);
+        var fullFile = Path.GetFullPath(shaderFile);
+        var presetsRoot = Path.Combine(packageRoot, "presets");
+        if (IsInside(presetsRoot, fullFile))
+        {
+            var relative = Path.GetRelativePath(presetsRoot, fullFile);
+            var roleDirectory = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
+            return Path.Combine(presetsRoot, roleDirectory);
+        }
+        if (IsInside(Path.Combine(packageRoot, "internal"), fullFile)) return packageRoot;
+        return Path.GetDirectoryName(fullFile)!;
+    }
+
+    private static bool IsSafePackageRelativePath(string value)
+    {
+        try
+        {
+            var normalized = value.Replace('/', Path.DirectorySeparatorChar);
+            if (Path.IsPathFullyQualified(normalized) || Path.IsPathRooted(normalized)) return false;
+            var root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "endfield_package_path_root"));
+            var candidate = Path.GetFullPath(Path.Combine(root, normalized));
+            return IsInside(root, candidate);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    private static void ValidatePresetIncludeClosures(
+        string outputDirectory,
+        IReadOnlyCollection<string> files,
+        ValidationResult result)
+    {
+        var packageRoot = Path.GetFullPath(outputDirectory);
+        var presetsRoot = Path.GetFullPath(Path.Combine(packageRoot, "presets"));
+        var presetsPrefix = presetsRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var packagePrefix = packageRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+
+        foreach (var entry in files.Where(file =>
+                     file.EndsWith(".fx", StringComparison.OrdinalIgnoreCase)
+                     && Path.GetFullPath(file).StartsWith(presetsPrefix, StringComparison.OrdinalIgnoreCase)))
+        {
+            var effectDirectory = Path.GetDirectoryName(entry)!;
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            Visit(entry);
+
+            void Visit(string file)
+            {
+                var fullPath = Path.GetFullPath(file);
+                if (!visited.Add(fullPath)) return;
+
+                var content = File.ReadAllText(fullPath, FileEncoding.ForShader(fullPath));
+                foreach (Match match in Regex.Matches(content, @"^\s*#include\s+""([^""]+)""", RegexOptions.Multiline))
+                {
+                    var include = match.Groups[1].Value.Replace('/', Path.DirectorySeparatorChar);
+                    var target = Path.GetFullPath(Path.Combine(effectDirectory, include));
+                    if (!target.StartsWith(packagePrefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.Error(
+                            "PRESET_INCLUDE_ESCAPE",
+                            $"生成材质的 include 超出角色包：{Path.GetRelativePath(packageRoot, entry)} -> {match.Groups[1].Value}");
+                        continue;
+                    }
+                    if (!File.Exists(target))
+                    {
+                        result.Error(
+                            "MISSING_PRESET_INCLUDE",
+                            $"生成材质缺少 MME 可解析的 include：{Path.GetRelativePath(packageRoot, entry)} -> "
+                            + $"{Path.GetRelativePath(packageRoot, fullPath)} -> {match.Groups[1].Value}");
+                        continue;
+                    }
+                    Visit(target);
                 }
             }
         }
-        return result;
     }
 }
 
@@ -251,13 +426,17 @@ public static class FileEncoding
 {
     public static System.Text.Encoding ForShader(string path)
     {
-        var fileName = Path.GetFileName(path);
-        if (fileName.Contains("face", StringComparison.OrdinalIgnoreCase))
+        var utf8 = new System.Text.UTF8Encoding(false, true);
+        try
+        {
+            utf8.GetString(File.ReadAllBytes(path));
+            return utf8;
+        }
+        catch (System.Text.DecoderFallbackException)
         {
             System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
             return System.Text.Encoding.GetEncoding(932);
         }
-        return new System.Text.UTF8Encoding(false);
     }
 }
 

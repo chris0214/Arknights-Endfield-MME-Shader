@@ -62,6 +62,13 @@ public sealed class PackageGenerator
         {
             var shadowBackend = ShadowBackendSupport.DetectRequired(project.TemplateRoot);
             CopyRuntime(project.TemplateRoot, staging, generated.GeneratedFiles);
+            // MME resolves every nested #include from the top-level FX
+            // directory. Give generated preset effects their own internal
+            // runtime so "internal/..." remains valid at every include depth.
+            CopyDirectory(
+                Path.Combine(staging, "internal"),
+                Path.Combine(staging, "presets", project.RoleSlug, "internal"),
+                generated.GeneratedFiles);
             var controllerPath = Path.Combine(staging, "controller", "Endfield_controller.pmx");
             if (File.Exists(controllerPath))
             {
@@ -260,18 +267,7 @@ public sealed class PackageGenerator
             $"#define EF_RIM_STRENGTH {F(p.RimStrength)}",
             $"#define EF_RIM_COLOR {Color3(p.RimColor)}",
             $"#define EF_SPEC_POW_STRENGTH {F(p.SpecularPower)}",
-            $"#define EF_SPEC_BACK_F0 {Color3(p.SpecularColor)}",
-            $"#define EF_HAIR_HIGHLIGHT_INTENSITY {F(p.HighlightStrength)}",
-            $"#define EF_HAIR_SPEC_OFF {Bool(profile.Domain != ShaderDomain.Hair || !p.UseHighlight)}",
-            $"#define EF_FACE_SDF_ENABLED {Bool(p.UseSdf)}",
-            $"#define EF_FACE_SHADOW_STRENGTH {F(p.SelfShadowStrength)}",
-            $"#define EF_SKIN_SPECULAR_STRENGTH {F(p.SpecularStrength)}",
-            $"#define EF_CLOTH_SPECULAR_STRENGTH {F(p.SpecularStrength)}",
-            $"#define EF_CLOTH_BROAD_SPECULAR_STRENGTH {F(p.SpecularBroadStrength)}",
-            $"#define EF_CLOTH_RAIN_ENABLED {Bool(p.EnableRain)}",
-            $"#define EF_CLOTH_RAIN_AMOUNT {F(p.EnableRain ? p.RainMaximum : 0f)}",
-            $"#define EF_EYE_IRIS_MATCAP05_ENABLED {Bool(p.UseMatcap05)}",
-            $"#define EF_EYE_IRIS_MATCAP07_ENABLED {Bool(p.UseMatcap07)}"
+            $"#define EF_SPEC_BACK_F0 {Color3(p.SpecularColor)}"
         };
         AddEndfieldMacros(lines, profile, textures);
         return string.Join(Environment.NewLine, lines) + Environment.NewLine;
@@ -289,12 +285,27 @@ public sealed class PackageGenerator
             ShaderDomain.Iris or ShaderDomain.EyeWhite or ShaderDomain.EyeHighlight or ShaderDomain.BrowLash or ShaderDomain.Mouth or ShaderDomain.EyeOverlay or ShaderDomain.BrowOverlay => "FACIAL",
             _ => "MAIN"
         };
+        if (profile.Domain == ShaderDomain.Face)
+            lines.Add($"#define EF_FACE_CULL_MODE {CullValue(p.CullMode)}");
+        if (profile.Domain == ShaderDomain.Skin)
+            lines.Add($"#define EF_SKIN_CULL_MODE {CullValue(p.CullMode)}");
+        if (profile.Domain == ShaderDomain.Cloth)
+            lines.Add($"#define EF_CLOTH_CULL_MODE {CullValue(p.CullMode)}");
+        if (profile.Domain is ShaderDomain.Iris or ShaderDomain.EyeWhite or ShaderDomain.BrowLash
+            or ShaderDomain.Mouth or ShaderDomain.EyeOverlay or ShaderDomain.BrowOverlay)
+            lines.Add($"#define EF_FACIAL_CULL_MODE {CullValue(p.CullMode)}");
+
+        // The project uses MMD's native material edge. Keep the retired custom
+        // normal-expansion outline out of every generated role effect.
+        lines.Add("#define EF_USE_OUTLINE 0");
+        lines.Add("#define EF_OUTLINE_CONTROLLER_ENABLED 0");
         lines.Add($"#define EF_USE_ORM {Bool(textures.ContainsKey("property"))}");
         AddTexture(lines, $"EF_{prefix}_MAIN_TEXTURE_RESOURCE", textures, "base");
         AddTexture(lines, $"EF_{prefix}_NORMAL_TEXTURE_RESOURCE", textures, "normal");
         AddTexture(lines, "EF_MAIN_TEXTURE_RESOURCE", textures, "base");
         AddTexture(lines, "EF_NORMAL_TEXTURE", textures, "normal");
         AddTexture(lines, "EF_ORM_TEXTURE", textures, "property");
+        AddTexture(lines, "EF_CLOTH_PROPERTY_TEXTURE_RESOURCE", textures, "property");
         AddTexture(lines, "EF_RAMP_TEXTURE", textures, "rd");
         AddTexture(lines, $"EF_{prefix}_RD_TEXTURE_RESOURCE", textures, "rd");
         AddTexture(lines, $"EF_{prefix}_RS_TEXTURE_RESOURCE", textures, "rs");
@@ -310,33 +321,30 @@ public sealed class PackageGenerator
             AddTexture(lines, "EF_HAIR_SPEC_TEXTURE", textures, "rs");
             AddTexture(lines, "EF_HAIR_ANISO_NOISE_TEXTURE", textures, "st");
             AddTexture(lines, "EF_HAIR_LINE_TEXTURE", textures, "hair_line");
-            // The accepted screen-space hair rim is a separate additive pass.
-            // It must be enabled before endfield_shader.hlsl is included or the
-            // DrawHairRim pass is omitted from the generated effect entirely.
-            lines.Add("#define EF_HAIR_FINAL_RIM_PASS 1");
-            lines.Add("#define EF_GOO_RIM_WIDTH_X 0.041847");
-            lines.Add("#define EF_GOO_RIM_WIDTH_Y 0.019108");
-            lines.Add("#define EF_GOO_DEPTH_RIM_VIEW_SCALE 0.1");
-            lines.Add("#define EF_GOO_DEPTH_RIM_MODEL_SCALE 10.0");
-            lines.Add("#define EF_GOO_DEPTH_RIM_DELTA_SCALE 0.8");
-            lines.Add("#define EF_GOO_DEPTH_RIM_MAX 4.0");
-            lines.Add("#define EF_GOO_RIM_FRESNEL_POWER 4.0");
-            lines.Add("#define EF_GOO_RIM_DIRECTIONAL_ATTENUATION 0.961783409");
-            lines.Add("#define EF_GOO_RIM_LIMITATION_STRENGTH 0.35");
-            lines.Add("#define EF_GOO_RIM_COLOR float3(1.0, 1.0, 1.0)");
-            lines.Add("#define EF_GOO_RIM_COLOR_STRENGTH 2.0");
-            lines.Add($"#define EF_HAIR_HIGHLIGHT_INTENSITY {F(p.HighlightStrength)}");
-            lines.Add($"#define EF_HAIR_SPEC_OFF {Bool(!p.UseHighlight)}");
+            AddHairProductionMacros(lines, p, textures);
         }
         if (profile.Domain == ShaderDomain.Cloth)
         {
-            lines.Add($"#define EF_CLOTH_MATCAP_ENABLED {(p.UseMatcap05 || p.UseMatcap07 ? 1 : 0)}");
-            lines.Add($"#define EF_CLOTH_MATCAP_MANUAL_LOD_ENABLED {(p.UseManualMatcapLod ? 1 : 0)}");
-            lines.Add($"#define EF_CLOTH_FGD_LUT_ENABLED {(p.UseFgdLut ? 1 : 0)}");
-            lines.Add($"#define EF_CLOTH_RAIN_ENABLED {(p.EnableRain ? 1 : 0)}");
+            var matcapEnabled = p.UseMatcap && textures.ContainsKey("matcap05");
+            var manualMatcapEnabled = matcapEnabled && p.UseManualMatcapLod && textures.ContainsKey("matcap07");
+            lines.Add($"#define EF_CLOTH_MATCAP_ENABLED {Bool(matcapEnabled)}");
+            lines.Add($"#define EF_CLOTH_MATCAP_MANUAL_LOD_ENABLED {Bool(manualMatcapEnabled)}");
+            lines.Add($"#define EF_CLOTH_FGD_LUT_ENABLED {Bool(p.UseFgdLut)}");
+            lines.Add($"#define EF_CLOTH_RAIN_ENABLED {Bool(p.EnableRain)}");
             lines.Add($"#define EF_CLOTH_RAIN_AMOUNT {F(p.EnableRain ? p.RainMaximum : 0f)}");
+            lines.Add($"#define EF_CLOTH_RAIN_DROP_ENABLED {Bool(p.EnableRain)}");
+            if (p.EnableRain)
+            {
+                lines.Add("#define EF_CLOTH_RAIN_TEXTURE_RESOURCE \"../../textures/common/rain/T_actor_common_rain_02_M.png\"");
+                lines.Add("#define EF_CLOTH_RAIN_DROP_TEXTURE_RESOURCE \"../../textures/common/rain/rain_drops.png\"");
+                lines.Add("#define EF_CLOTH_RAIN_DROP_PHASE_TEXTURE_RESOURCE \"../../textures/common/rain/rain_drops_phase.png\"");
+            }
+            lines.Add("#define EF_CLOTH_ENV_TEXTURE_RESOURCE \"../../textures/common/cloth_environment_current.dds\"");
+            if (p.UseFgdLut)
+                lines.Add("#define EF_CLOTH_FGD_TEXTURE_RESOURCE \"../../textures/common/PreIntegratedFGD_GGXDisneyDiffuse.png\"");
             AddTexture(lines, "EF_CLOTH_MATCAP_TEXTURE_RESOURCE", textures, "matcap05");
             AddTexture(lines, "EF_CLOTH_MATCAP_MANUAL_TEXTURE_RESOURCE", textures, "matcap07");
+            AddClothProductionMacros(lines, p);
         }
         if (profile.Domain == ShaderDomain.Iris)
         {
@@ -355,13 +363,220 @@ public sealed class PackageGenerator
         if (profile.Domain == ShaderDomain.Face)
         {
             lines.Add($"#define EF_FACE_SDF_ENABLED {(p.UseSdf ? 1 : 0)}");
-            AddTexture(lines, "EF_FACE_SHADOW_RECEIVER_ST_TEXTURE_RESOURCE", textures, "color_mask");
+            AddTexture(lines, "EF_FACE_CMM_TEXTURE_RESOURCE", textures, "color_mask");
+            AddTexture(lines, "EF_FACE_SHADOW_RECEIVER_ST_TEXTURE_RESOURCE", textures, "st");
+            AddFaceProductionMacros(lines, p, textures);
         }
         if (profile.Domain == ShaderDomain.Skin)
         {
-            lines.Add($"#define EF_SKIN_SPECULAR_ENABLED {(p.SpecularStrength > 0f ? 1 : 0)}");
+            AddSkinProductionMacros(lines, p);
             lines.Add($"#define EF_SKIN_SPECULAR_STRENGTH {F(p.SpecularStrength)}");
         }
+    }
+
+    private static void AddHairProductionMacros(
+        ICollection<string> lines,
+        ShaderParameters p,
+        IReadOnlyDictionary<string, string> textures)
+    {
+        var hasAssetComposite = textures.ContainsKey("normal")
+            && textures.ContainsKey("property")
+            && textures.ContainsKey("rd")
+            && textures.ContainsKey("rs")
+            && textures.ContainsKey("st")
+            && textures.ContainsKey("hair_line");
+        lines.Add("#define EF_HAIR_FINAL_RIM_PASS 1");
+        lines.Add($"#define EF_HAIR_RD_KK_RS_COMPOSITE_DEBUG {Bool(hasAssetComposite)}");
+        lines.Add("#define EF_HAIR_RD_TOP_LIGHT_DEBUG 1");
+        lines.Add($"#define EF_HAIR_RD_DARK_LINE_DEBUG {Bool(hasAssetComposite)}");
+        lines.Add("#define EF_HAIR_NORMALIZE_MMD_LIGHT_INTENSITY 1");
+        lines.Add("#define EF_HAIR_TOP_LIGHT_CONE_DEBUG 1");
+        lines.Add("#define EF_HAIR_KK_SHAPE_SCALE_DEBUG 1");
+        lines.Add("#define EF_HAIR_KK_JAGGED_CONTROL_DEBUG 1");
+        lines.Add("#define EF_HAIR_KK_SHARP_BAND_DEBUG 1");
+        lines.Add("#define EF_HAIR_KK_ARTICLE_RANGE_FRONT_DEBUG 1");
+        lines.Add("#define EF_HAIR_KK_FRONT_NOV_WIDEN_DEBUG 1");
+        lines.Add("#define EF_HAIR_KK_FRONT_NOV_POWER 0.275");
+        lines.Add("#define EF_HAIR_KK_GOO_AB_COLOR_DEBUG 1");
+        lines.Add("#define EF_HAIR_KK_GOO_RS_FUSION 1");
+        lines.Add("#define EF_HAIR_GOO_RS_FUSION_STRENGTH 0.35");
+        lines.Add("#define EF_HAIR_GOO_RS_DIELECTRIC_GAIN 0.28");
+        lines.Add("#define EF_HAIR_GOO_UPPER_COLOR_MIX 0.35");
+        lines.Add("#define EF_HAIR_KK_FRONT_EDGE_TUNE_DEBUG 1");
+        lines.Add("#define EF_HAIR_KK_FRONT_UPPER_CUT_SOFTNESS 0.015");
+        lines.Add("#define EF_HAIR_KK_FRONT_LOWER_FADE_POWER 0.75");
+        lines.Add("#define EF_HAIR_KK_FRONT_LOWER_ONE_SIDED 1");
+        lines.Add("#define EF_HAIR_CONTROLLER_ENABLED 1");
+        lines.Add("#define EF_HAIR_CONTROLLER_C5_ENABLED 1");
+        lines.Add("#define EF_HAIR_CONTROLLER_RANGE5_ENABLED 1");
+        lines.Add("#define EF_HAIR_CONTROLLER_MAX_MULTIPLIER 5.0");
+        lines.Add("#define EF_HAIR_CONTROLLER_OFFSET_SCALE 5.0");
+        lines.Add("#define EF_HAIR_CONTROLLER_BASE_GRADE_ENABLED 1");
+        lines.Add("#define EF_HAIR_CONTROLLER_BASE_GRADE_VERTEX_PRECOMPUTE 1");
+        lines.Add("#define EF_HAIR_CONTROLLER_C5_HNORMAL_ENABLED 1");
+        lines.Add("#define EF_HAIR_CONTROLLER_C5_SHAPE_ENABLED 1");
+        lines.Add("#define EF_HAIR_CONTROLLER_C5_DIFFUSE_ENABLED 1");
+        lines.Add("#define EF_HAIR_CONTROLLER_NAME \"EndfieldHair_controller_Range5.pmx\"");
+        lines.Add("#define EF_BASE_COLOR float3(0.98588085, 0.98588085, 0.98588085)");
+        lines.Add("#define EF_BASE_COLOR_POW 1.0");
+        lines.Add("#define EF_RD_HALFLAMBERT_CENTER 0.57000005245");
+        lines.Add("#define EF_RD_HALFLAMBERT_SHARP 0.18000000715");
+        lines.Add("#define EF_RD_GLOBAL_SHADOW_MIN -1.7261145115");
+        lines.Add("#define EF_RD_GLOBAL_SHADOW_MAX 1.0");
+        lines.Add("#define EF_RD_DIRECT_SHADOW_FLOOR 0.23467295");
+        lines.Add("#define EF_ALBEDO_DARK_STRENGTH 0.8");
+        lines.Add("#define EF_ALBEDO_DARK_SATURATION 0.8");
+        lines.Add("#define EF_DEEP_DARK_STRENGTH 0.65");
+        lines.Add("#define EF_RD_DARK_TONE_LINEAR_SCALE 0.74544862");
+        lines.Add("#define EF_RD_LIGHT_TONE_LINEAR_SCALE 1.56278558");
+        lines.Add("#define EF_RD_SELF_SHADOW_STRENGTH 1.0");
+        lines.Add("#define EF_GOO_RIM_WIDTH_X 0.041847");
+        lines.Add("#define EF_GOO_RIM_WIDTH_Y 0.019108");
+        lines.Add("#define EF_GOO_DEPTH_RIM_VIEW_SCALE 0.1");
+        lines.Add("#define EF_GOO_DEPTH_RIM_MODEL_SCALE 10.0");
+        lines.Add("#define EF_GOO_DEPTH_RIM_DELTA_SCALE 0.8");
+        lines.Add("#define EF_GOO_DEPTH_RIM_MAX 4.0");
+        lines.Add("#define EF_GOO_RIM_FRESNEL_POWER 4.0");
+        lines.Add("#define EF_GOO_RIM_DIRECTIONAL_ATTENUATION 0.961783409");
+        lines.Add("#define EF_GOO_RIM_LIMITATION_STRENGTH 0.35");
+        lines.Add("#define EF_GOO_RIM_COLOR float3(1.0, 1.0, 1.0)");
+        lines.Add("#define EF_GOO_RIM_COLOR_STRENGTH 2.0");
+        lines.Add("#define EF_HAIR_KK_SPHERE_HN_BLEND 0.25");
+        lines.Add("#define EF_HAIR_KK_RANGE 320.0");
+        lines.Add("#define EF_HAIR_ANISO_NOISE_UV_ST float4(1.5, 1.0, 0.0, 0.0)");
+        lines.Add("#define EF_HAIR_ANISO_NOISE_STRENGTH 0.16");
+        lines.Add("#define EF_HAIR_ANISO_BASE_OFFSET 0.55");
+        lines.Add("#define EF_HAIR_ANISO_CUT_OFFSET 0.25");
+        lines.Add("#define EF_HAIR_TOP_LIGHT_OFFSET 0.0");
+        lines.Add($"#define EF_HAIR_HIGHLIGHT_INTENSITY {F(p.HighlightStrength)}");
+        lines.Add($"#define EF_HAIR_SPEC_OFF {Bool(!p.UseHighlight)}");
+    }
+
+    private static void AddSkinProductionMacros(ICollection<string> lines, ShaderParameters p)
+    {
+        lines.Add("#define EF_SKIN_LIGHT_CURVE 1.0");
+        lines.Add("#define EF_SKIN_RD_COLOR_STRENGTH 0.35");
+        lines.Add("#define EF_SKIN_RD_DARK_STRENGTH 0.82");
+        lines.Add("#define EF_SKIN_RD_LIGHT_STRENGTH 1.12");
+        lines.Add("#define EF_SKIN_LUT_STRENGTH 0.35");
+        lines.Add("#define EF_SKIN_LUT_USE_BRG 1");
+        lines.Add("#define EF_SKIN_SSS_ENABLED 1");
+        lines.Add("#define EF_SKIN_SSS_RANGE 0.5");
+        lines.Add("#define EF_SKIN_SSS_STRENGTH 1.0");
+        lines.Add("#define EF_SKIN_SSS_COLOR float3(0.822936177, 0.669170380, 0.648408771)");
+        lines.Add($"#define EF_SKIN_SPECULAR_ENABLED {Bool(p.SpecularStrength > 0f)}");
+        lines.Add("#define EF_SKIN_SPECULAR_ROUGHNESS 0.58");
+        lines.Add("#define EF_SKIN_SPECULAR_REFLECTIVITY 0.50");
+        lines.Add($"#define EF_SKIN_SPECULAR_COLOR {Color3(p.SpecularColor)}");
+        lines.Add("#define EF_SKIN_SPECULAR_LIGHT_END 0.30");
+        lines.Add("#define EF_SKIN_ZMD_SHADOW_ENABLED 1");
+        lines.Add($"#define EF_SKIN_SHADOW_STRENGTH {F(p.SelfShadowStrength)}");
+        lines.Add("#define EF_SKIN_RIM_ENABLED 1");
+        lines.Add("#define EF_SKIN_RIM_AREA 0.35");
+        lines.Add($"#define EF_SKIN_RIM_STRENGTH {F(p.RimStrength)}");
+        lines.Add($"#define EF_SKIN_RIM_COLOR {Color3(p.RimColor)}");
+        lines.Add("#define EF_SKIN_RIM_DIFFUSE_EFFECT 0.5");
+        lines.Add("#define EF_SKIN_SCREEN_RIM_ENABLED 1");
+        lines.Add("#define EF_SKIN_SCREEN_RIM_WIDTH_X 0.041847");
+        lines.Add("#define EF_SKIN_SCREEN_RIM_WIDTH_Y 0.019108");
+        lines.Add("#define EF_SKIN_SCREEN_RIM_VIEW_SCALE 0.1");
+        lines.Add("#define EF_SKIN_SCREEN_RIM_MODEL_SCALE 10.0");
+        lines.Add("#define EF_SKIN_SCREEN_RIM_DEPTH_SCALE 0.8");
+        lines.Add("#define EF_SKIN_SCREEN_RIM_DEPTH_MAX 4.0");
+        lines.Add("#define EF_SKIN_SCREEN_RIM_FRESNEL_POWER 3.0");
+        lines.Add("#define EF_SKIN_SCREEN_RIM_LIGHT_START 0.0");
+        lines.Add("#define EF_SKIN_SCREEN_RIM_LIGHT_END 0.2");
+        lines.Add("#define EF_SKIN_SCREEN_RIM_STRENGTH 0.7");
+        lines.Add($"#define EF_SKIN_SCREEN_RIM_COLOR {Color3(p.RimColor)}");
+        lines.Add("#define EF_SKIN_CONTROLLER_ENABLED 1");
+        lines.Add("#define EF_SKIN_CONTROLLER_NAME \"EndfieldSkin_controller.pmx\"");
+        lines.Add("#define EF_SKIN_CONTROLLER_MAX_MULTIPLIER 5.0");
+        lines.Add("#define EF_SKIN_SPECULAR_CONTROLLER_MAX_MULTIPLIER 25.0");
+    }
+
+    private static void AddClothProductionMacros(ICollection<string> lines, ShaderParameters p)
+    {
+        lines.Add($"#define EF_CLOTH_NORMAL_STRENGTH {F(p.NormalStrength)}");
+        lines.Add($"#define EF_CLOTH_LIGHT_CURVE {F(p.RampScale)}");
+        lines.Add("#define EF_CLOTH_RD_COLOR_STRENGTH 0.35");
+        lines.Add($"#define EF_CLOTH_LUT_STRENGTH {F(p.RampBlendStrength)}");
+        lines.Add($"#define EF_CLOTH_DARK_STRENGTH {F(p.RampShadowScale)}");
+        lines.Add($"#define EF_CLOTH_LIGHT_STRENGTH {F(p.RampLightScale)}");
+        lines.Add("#define EF_CLOTH_LAYERED_DIELECTRIC_ENABLED 1");
+        lines.Add("#define EF_CLOTH_LAYER_COAT_STRENGTH 0.40");
+        lines.Add("#define EF_CLOTH_LAYER_COAT_FLOOR 0.02");
+        lines.Add("#define EF_CLOTH_LAYER_SMOOTH_START 0.30");
+        lines.Add("#define EF_CLOTH_LAYER_SMOOTH_END 0.72");
+        lines.Add("#define EF_CLOTH_AO_DARK_STRENGTH 0.65");
+        lines.Add("#define EF_CLOTH_AO_LIGHT_STRENGTH 0.25");
+        lines.Add("#define EF_CLOTH_DIELECTRIC_F0 0.08");
+        lines.Add("#define EF_CLOTH_SPECULAR_MAX 20.0");
+        lines.Add("#define EF_CLOTH_SPECULAR_VIEW_LOCK 0.65");
+        lines.Add("#define EF_CLOTH_SPECULAR_LIGHT_FLOOR 0.05");
+        lines.Add("#define EF_CLOTH_DIRECT_METAL_TINT_STRENGTH 0.08");
+        lines.Add($"#define EF_CLOTH_SPECULAR_STRENGTH {F(p.SpecularStrength)}");
+        lines.Add($"#define EF_CLOTH_BROAD_SPECULAR_STRENGTH {F(p.SpecularBroadStrength)}");
+        lines.Add("#define EF_CLOTH_BROAD_SPECULAR_ROUGHNESS 0.58");
+        lines.Add("#define EF_CLOTH_BROAD_SPECULAR_NORMAL_SMOOTHING 0.40");
+        lines.Add("#define EF_CLOTH_BROAD_SPECULAR_TINT_STRENGTH 0.08");
+        lines.Add("#define EF_CLOTH_BROAD_SPECULAR_METALLIC_REJECTION 2.0");
+        lines.Add("#define EF_CLOTH_ANISO_SPECULAR_STRENGTH 0.60");
+        lines.Add("#define EF_CLOTH_ANISO_AMOUNT 0.55");
+        lines.Add("#define EF_CLOTH_ANISO_AXIS 1.0");
+        lines.Add("#define EF_CLOTH_ANISO_ROUGHNESS_FLOOR 0.28");
+        lines.Add("#define EF_CLOTH_ANISO_NORMAL_SMOOTHING 0.65");
+        lines.Add("#define EF_CLOTH_ANISO_TINT_STRENGTH 0.08");
+        lines.Add("#define EF_CLOTH_ANISO_METALLIC_REJECTION 2.0");
+        lines.Add("#define EF_CLOTH_RIM_STRENGTH 0.55");
+        lines.Add("#define EF_CLOTH_RIM_WIDTH 0.30");
+        lines.Add("#define EF_CLOTH_RIM_SOFTNESS 0.08");
+        lines.Add("#define EF_CLOTH_RIM_LIGHT_START 0.05");
+        lines.Add("#define EF_CLOTH_RIM_LIGHT_END 0.45");
+        lines.Add("#define EF_CLOTH_RIM_NORMAL_SMOOTHING 0.90");
+        lines.Add("#define EF_CLOTH_SCREEN_RIM_ENABLED 1");
+        lines.Add("#define EF_CLOTH_ZMD_SHADOW_ENABLED 1");
+        lines.Add($"#define EF_CLOTH_SHADOW_STRENGTH {F(p.SelfShadowStrength)}");
+        lines.Add("#define EF_CLOTH_CONTROLLER_ENABLED 1");
+        lines.Add("#define EF_CLOTH_CONTROLLER_NAME \"EndfieldCloth_controller.pmx\"");
+        lines.Add("#define EF_CLOTH_CONTROLLER_MAX_MULTIPLIER 5.0");
+        lines.Add("#define EF_CLOTH_ENV_STRENGTH 0.80");
+        lines.Add("#define EF_CLOTH_HDR_RELATIVE_STRENGTH 0.65");
+        lines.Add("#define EF_CLOTH_ENV_METAL_TINT_STRENGTH 0.05");
+        if (p.EnableRain)
+        {
+            lines.Add("#define EF_CLOTH_RAIN_NORMAL_STRENGTH 1.25");
+            lines.Add("#define EF_CLOTH_RAIN_SECONDARY_ENABLED 1");
+            lines.Add("#define EF_CLOTH_RAIN_DROP_NORMAL_OFFSET 0.72");
+            lines.Add("#define EF_CLOTH_RAIN_DROP_EDGE_SMOOTHNESS 2.3");
+            lines.Add("#define EF_CLOTH_RAIN_COAT_ENABLED 1");
+            lines.Add("#define EF_CLOTH_RAIN_NORMAL_X_SIGN 1.0");
+            lines.Add("#define EF_CLOTH_RAIN_NORMAL_Y_SIGN 1.0");
+        }
+    }
+
+    private static void AddFaceProductionMacros(
+        ICollection<string> lines,
+        ShaderParameters p,
+        IReadOnlyDictionary<string, string> textures)
+    {
+        var hasCmm = textures.ContainsKey("color_mask");
+        var hasSt = textures.ContainsKey("st");
+        var hasRdAndLut = textures.ContainsKey("rd") && textures.ContainsKey("lut");
+        lines.Add($"#define EF_FACE_SDF_GOO_ANGLE_DEBUG {Bool(p.UseSdf)}");
+        lines.Add($"#define EF_FACE_SDF_CMM_BLEND_DEBUG {Bool(p.UseSdf && hasCmm)}");
+        lines.Add($"#define EF_FACE_LUT_RD_COLOR_DEBUG {Bool(hasRdAndLut)}");
+        lines.Add($"#define EF_FACE_LUT_RD_COLOR_AO_RAMP_DEBUG {Bool(hasRdAndLut)}");
+        lines.Add("#define EF_FACE_AO_STRENGTH 0.3");
+        lines.Add("#define EF_FACE_FINAL_BRIGHTNESS_DEBUG 1");
+        lines.Add("#define EF_FACE_FINAL_BRIGHTNESS 1.15");
+        lines.Add("#define EF_FACE_FINAL_SOFT_EXPOSURE_ENABLED 1");
+        lines.Add("#define EF_FACE_FINAL_SOFT_EXPOSURE 1.6666667");
+        lines.Add($"#define EF_FACE_SSS_ENABLED {Bool(hasCmm)}");
+        lines.Add($"#define EF_FACE_LIP_SPECULAR_ENABLED {Bool(hasSt)}");
+        lines.Add($"#define EF_FACE_RIM_ENABLED {Bool(hasCmm)}");
+        lines.Add($"#define EF_FACE_STENCIL_WRITE_ENABLED {Bool(hasSt)}");
+        lines.Add($"#define EF_FACE_SHADOW_RECEIVER_ST_ENABLED {Bool(hasSt)}");
+        lines.Add($"#define EF_FACE_SHADOW_STRENGTH {F(p.SelfShadowStrength)}");
     }
 
     private static byte[] BuildWrapper(EndfieldProject project, MaterialProfile profile, string includeName)
@@ -384,7 +599,7 @@ public sealed class PackageGenerator
             : $"// Generated Endfield FX for {profile.MaterialName}");
         lines.Add($"#include \"includes/{includeName}\"");
         if (profile.Domain == ShaderDomain.EyeWhite)
-            lines.Add("#include \"../../internal/endfield_eye_white.hlsl\"");
+            lines.Add("#include \"internal/endfield_eye_white.hlsl\"");
         var shaderInclude = profile.Domain switch
         {
             ShaderDomain.Face => "endfield_face.hlsl",
@@ -395,7 +610,7 @@ public sealed class PackageGenerator
             ShaderDomain.BrowLash or ShaderDomain.Mouth or ShaderDomain.EyeOverlay or ShaderDomain.BrowOverlay => "endfield_facial.hlsl",
             _ => "endfield_shader.hlsl"
         };
-        lines.Add($"#include \"../../internal/{shaderInclude}\"");
+        lines.Add($"#include \"internal/{shaderInclude}\"");
         var text = string.Join(Environment.NewLine, lines) + Environment.NewLine;
         return usesCp932 ? EncodeMmdText(text) : new UTF8Encoding(false).GetBytes(text);
     }

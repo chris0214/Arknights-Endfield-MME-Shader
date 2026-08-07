@@ -1,4 +1,8 @@
 using EndfieldShaderTool.Core;
+using System.ComponentModel;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 static void Require(bool condition, string message)
 {
@@ -108,7 +112,8 @@ if (File.Exists(perlicaPath))
     hairProfile.Parameters = MaterialDefaults.CreateParameters(ShaderDomain.Hair);
     hairProfile.Parameters.UseNormal = false;
     var smokeOutput = Path.Combine(Path.GetTempPath(), "EndfieldShaderToolSmoke_" + Guid.NewGuid().ToString("N"));
-    var generated = new PackageGenerator().Generate(perlicaProject, smokeOutput, overwrite: true);
+    var generator = new PackageGenerator();
+    var generated = generator.Generate(perlicaProject, smokeOutput, overwrite: true);
     Require(generated.Validation.IsValid, "Non-Chen package generation failed: " + string.Join("; ", generated.Validation.Messages.Select(x => x.Message)));
     Require(File.Exists(Path.Combine(generated.OutputDirectory, "FXC_UNVERIFIED.txt")), "Generated package was not committed.");
     var hairInclude = Path.Combine(generated.OutputDirectory, "presets", perlicaProject.RoleSlug, "includes",
@@ -116,6 +121,12 @@ if (File.Exists(perlicaPath))
     Require(File.Exists(hairInclude), "Generated package did not contain the expected hair include.");
     Require(File.ReadAllText(hairInclude).Contains("#define EF_HAIR_FINAL_RIM_PASS 1", StringComparison.Ordinal),
         "Generated hair effects must compile the screen-space DrawHairRim pass.");
+    var regenerated = generator.Generate(perlicaProject, smokeOutput, overwrite: true);
+    Require(regenerated.Validation.IsValid && File.Exists(Path.Combine(regenerated.OutputDirectory, "FXC_UNVERIFIED.txt")),
+        "Overwriting an existing generated package failed.");
+    Require(!Directory.GetDirectories(smokeOutput, "*.endfieldstage_*", SearchOption.TopDirectoryOnly).Any()
+        && !Directory.GetDirectories(smokeOutput, "*.endfieldbackup_*", SearchOption.TopDirectoryOnly).Any(),
+        "Successful package overwrite left staging or backup directories behind.");
     var fxc = Environment.GetEnvironmentVariable("ENDFIELD_SKIP_FXC") == "1"
         ? null
         : FxcCompiler.Find();
@@ -129,4 +140,64 @@ if (File.Exists(perlicaPath))
     Directory.Delete(smokeOutput, recursive: true);
 }
 
+if (OperatingSystem.IsWindows())
+{
+    var fallbackRoot = Path.Combine(Path.GetTempPath(), "EndfieldCommitFallback_" + Guid.NewGuid().ToString("N"));
+    var staging = Path.Combine(fallbackRoot, "role.endfieldstage_test");
+    var output = Path.Combine(fallbackRoot, "role");
+    Directory.CreateDirectory(staging);
+    File.WriteAllText(Path.Combine(staging, "fallback.txt"), "copy fallback");
+    try
+    {
+        using (DirectoryLock.Open(staging))
+        {
+            var commit = typeof(PackageGenerator).GetMethod("CommitStaging", BindingFlags.NonPublic | BindingFlags.Static)
+                ?? throw new MissingMethodException(nameof(PackageGenerator), "CommitStaging");
+            try
+            {
+                commit.Invoke(null, new object[] { staging, output });
+            }
+            catch (TargetInvocationException ex)
+            {
+                throw ex.InnerException ?? ex;
+            }
+        }
+        Require(File.ReadAllText(Path.Combine(output, "fallback.txt")) == "copy fallback",
+            "A locked staging directory did not use the recursive-copy commit fallback.");
+    }
+    finally
+    {
+        if (Directory.Exists(fallbackRoot)) Directory.Delete(fallbackRoot, recursive: true);
+    }
+}
+
 Console.WriteLine("EndfieldShaderTool smoke tests passed.");
+
+internal static class DirectoryLock
+{
+    private const uint FileFlagBackupSemantics = 0x02000000;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFile(
+        string fileName,
+        uint desiredAccess,
+        FileShare shareMode,
+        IntPtr securityAttributes,
+        FileMode creationDisposition,
+        uint flagsAndAttributes,
+        IntPtr templateFile);
+
+    public static SafeFileHandle Open(string path)
+    {
+        var handle = CreateFile(
+            path,
+            0,
+            FileShare.Read | FileShare.Write,
+            IntPtr.Zero,
+            FileMode.Open,
+            FileFlagBackupSemantics,
+            IntPtr.Zero);
+        if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+        return handle;
+    }
+}

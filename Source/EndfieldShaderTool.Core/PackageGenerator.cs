@@ -34,11 +34,29 @@ public sealed class PackageGenerator
         if (!validation.IsValid) return new GenerationResult { Validation = validation };
         if (string.IsNullOrWhiteSpace(outputParent)) throw new ArgumentException("Output directory is required.", nameof(outputParent));
 
-        var output = Path.Combine(Path.GetFullPath(outputParent), project.RoleSlug);
+        var outputRoot = Path.GetFullPath(outputParent);
+        var output = Path.Combine(outputRoot, project.RoleSlug);
         if (Directory.Exists(output) && !overwrite) throw new IOException($"Output directory already exists: {output}");
-        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         var staging = output + ".endfieldstage_" + Guid.NewGuid().ToString("N");
-        Directory.CreateDirectory(staging);
+        try
+        {
+            RunFileSystemWithRetry(
+                () => Directory.CreateDirectory(outputRoot),
+                $"无法创建角色包输出根目录：{outputRoot}");
+            RunFileSystemWithRetry(
+                () => Directory.CreateDirectory(staging),
+                $"无法创建角色包临时目录：{staging}");
+        }
+        catch (Exception ex)
+        {
+            TryDeleteDirectory(staging);
+            throw CreateCommitException(
+                "无法创建角色包输出或临时目录。",
+                staging,
+                output,
+                null,
+                ex);
+        }
         var generated = new GenerationResult { OutputDirectory = output, Validation = validation };
         try
         {
@@ -547,30 +565,222 @@ public sealed class PackageGenerator
 
     private static void CommitStaging(string staging, string output)
     {
-        if (!Directory.Exists(output))
+        string? backup = null;
+        if (Directory.Exists(output))
         {
-            Directory.Move(staging, output);
+            backup = output + ".endfieldbackup_" + Guid.NewGuid().ToString("N");
+            if (!TryMoveDirectoryWithRetry(output, backup, out var backupError))
+            {
+                throw CreateCommitException(
+                    "无法为已有角色包创建备份，因此没有覆盖原目录。",
+                    staging,
+                    output,
+                    backup,
+                    backupError);
+            }
+        }
+
+        if (TryMoveDirectoryWithRetry(staging, output, out var moveError))
+        {
+            if (backup is not null) TryDeleteDirectoryWithRetry(backup);
             return;
         }
 
-        var backup = output + ".endfieldbackup_" + Guid.NewGuid().ToString("N");
-        Directory.Move(output, backup);
         try
         {
-            Directory.Move(staging, output);
-            TryDeleteDirectory(backup);
+            // Sync clients and antivirus software can hold a directory handle that
+            // blocks renaming while still allowing its files to be read. Copying is
+            // slower, but gives users in those folders a reliable fallback.
+            CopyDirectoryWithRetry(staging, output);
         }
-        catch
+        catch (Exception copyError)
         {
-            if (!Directory.Exists(output) && Directory.Exists(backup)) Directory.Move(backup, output);
-            throw;
+            var partialOutputRemoved = TryDeleteDirectoryWithRetry(output);
+            var restored = backup is null;
+            Exception? restoreError = null;
+            if (backup is not null)
+                restored = TryRestoreBackup(backup, output, out restoreError);
+
+            var errors = new List<Exception>();
+            if (moveError is not null) errors.Add(moveError);
+            errors.Add(copyError);
+            if (restoreError is not null) errors.Add(restoreError);
+            var inner = errors.Count == 1 ? errors[0] : new AggregateException(errors);
+            var recovery = backup is null
+                ? "本次没有覆盖已有角色包。"
+                : restored
+                    ? "原有角色包已自动恢复。"
+                    : $"原有角色包未能自动恢复，备份仍保留在：{backup}";
+            if (!partialOutputRemoved && Directory.Exists(output))
+                recovery += $" 部分输出可能仍保留在：{output}";
+
+            throw CreateCommitException(
+                $"目录重命名和逐文件复制都失败。{recovery}",
+                staging,
+                output,
+                backup,
+                inner);
         }
+
+        if (backup is not null) TryDeleteDirectoryWithRetry(backup);
     }
 
     private static void TryDeleteDirectory(string path)
     {
-        try { if (Directory.Exists(path)) Directory.Delete(path, true); } catch { }
+        try { TryDeleteDirectoryWithRetry(path); } catch { }
     }
+
+    private static bool TryDeleteDirectoryWithRetry(string path)
+    {
+        if (!Directory.Exists(path)) return true;
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                Directory.Delete(path, true);
+                return true;
+            }
+            catch (Exception ex) when (IsRetryableFileSystemException(ex))
+            {
+                if (attempt < 4) Thread.Sleep(120 * (attempt + 1));
+            }
+        }
+        return !Directory.Exists(path);
+    }
+
+    private static bool TryMoveDirectoryWithRetry(string source, string destination, out Exception? last)
+    {
+        last = null;
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                Directory.Move(source, destination);
+                return true;
+            }
+            catch (Exception ex) when (IsRetryableFileSystemException(ex))
+            {
+                last = ex;
+                if (attempt < 4) Thread.Sleep(150 * (attempt + 1));
+            }
+        }
+        return false;
+    }
+
+    private static void CopyDirectoryWithRetry(string source, string destination)
+    {
+        if (!Directory.Exists(source))
+            throw new DirectoryNotFoundException($"角色包临时目录不存在：{source}");
+        if (Directory.Exists(destination))
+            throw new IOException($"复制兜底的目标目录已存在：{destination}");
+
+        RunFileSystemWithRetry(
+            () => Directory.CreateDirectory(destination),
+            $"无法创建输出目录：{destination}");
+        var directories = RunFileSystemWithRetry(
+            () => Directory.GetDirectories(source, "*", SearchOption.AllDirectories),
+            $"无法读取角色包临时目录：{source}");
+        foreach (var directory in directories)
+        {
+            var relative = Path.GetRelativePath(source, directory);
+            var target = Path.Combine(destination, relative);
+            RunFileSystemWithRetry(
+                () => Directory.CreateDirectory(target),
+                $"无法创建输出子目录：{target}");
+        }
+
+        var files = RunFileSystemWithRetry(
+            () => Directory.GetFiles(source, "*", SearchOption.AllDirectories),
+            $"无法枚举角色包临时文件：{source}");
+        foreach (var file in files)
+        {
+            var relative = Path.GetRelativePath(source, file);
+            var target = Path.Combine(destination, relative);
+            RunFileSystemWithRetry(
+                () => File.Copy(file, target, true),
+                $"无法复制角色包文件：{file}\n目标：{target}");
+        }
+    }
+
+    private static bool TryRestoreBackup(string backup, string output, out Exception? error)
+    {
+        error = null;
+        if (!Directory.Exists(backup))
+        {
+            error = new DirectoryNotFoundException($"角色包备份目录不存在：{backup}");
+            return false;
+        }
+        if (Directory.Exists(output) && !TryDeleteDirectoryWithRetry(output))
+        {
+            error = new IOException($"无法清理部分输出，不能安全恢复备份：{output}");
+            return false;
+        }
+        if (TryMoveDirectoryWithRetry(backup, output, out var moveError)) return true;
+
+        try
+        {
+            CopyDirectoryWithRetry(backup, output);
+            TryDeleteDirectoryWithRetry(backup);
+            return true;
+        }
+        catch (Exception copyError)
+        {
+            error = moveError is null
+                ? copyError
+                : new AggregateException(moveError, copyError);
+            return false;
+        }
+    }
+
+    private static T RunFileSystemWithRetry<T>(Func<T> operation, string failureMessage)
+    {
+        Exception? last = null;
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                return operation();
+            }
+            catch (Exception ex) when (IsRetryableFileSystemException(ex))
+            {
+                last = ex;
+                if (attempt < 4) Thread.Sleep(120 * (attempt + 1));
+            }
+        }
+        throw new IOException(failureMessage, last);
+    }
+
+    private static void RunFileSystemWithRetry(Action operation, string failureMessage)
+    {
+        RunFileSystemWithRetry(
+            () =>
+            {
+                operation();
+                return true;
+            },
+            failureMessage);
+    }
+
+    private static IOException CreateCommitException(
+        string reason,
+        string staging,
+        string output,
+        string? backup,
+        Exception? inner)
+    {
+        var message = new StringBuilder()
+            .AppendLine("角色包无法安全写入或提交到输出目录。")
+            .AppendLine(reason)
+            .AppendLine($"临时目录：{staging}")
+            .AppendLine($"输出目录：{output}");
+        if (!string.IsNullOrWhiteSpace(backup) && Directory.Exists(backup))
+            message.AppendLine($"备份目录：{backup}");
+        message.Append("请关闭正在读取该目录的 MMD、资源管理器预览、百度网盘/OneDrive 和杀毒软件，或改用本地普通目录后重试。");
+        return new IOException(message.ToString(), inner);
+    }
+
+    private static bool IsRetryableFileSystemException(Exception ex) =>
+        ex is IOException or UnauthorizedAccessException;
 
     private static string F(float value) => value.ToString("0.######", CultureInfo.InvariantCulture);
     private static string Bool(bool value) => value ? "1" : "0";

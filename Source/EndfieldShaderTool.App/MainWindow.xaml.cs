@@ -68,7 +68,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         TemplateText.Text = FindTemplateRoot() ?? string.Empty;
-        OutputText.Text = Path.Combine(AppContext.BaseDirectory, "Generated");
+        OutputText.Text = GetDefaultOutputDirectory();
         FxcText.Text = FxcCompiler.Find() ?? string.Empty;
         Log("Endfield Shader Tool 已启动。选择 ShaderTemplate 和 PMX 后点击“导入 PMX”。");
     }
@@ -1177,6 +1177,13 @@ public partial class MainWindow : Window
             current = current.Parent;
         }
         return null;
+    }
+
+    private static string GetDefaultOutputDirectory()
+    {
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var root = string.IsNullOrWhiteSpace(userProfile) ? Path.GetTempPath() : userProfile;
+        return Path.Combine(root, "EndfieldMME_Generated");
     }
 
     private static string Friendly(string name)

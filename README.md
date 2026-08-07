@@ -33,20 +33,9 @@
 
 参考工程只用于研究算法和行为，不代表代码复制或版权转移。详见 [`AUTHORS.md`](AUTHORS.md) 与 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
-
-## 开发与验证
-
-```powershell
-$env:DOTNET_CLI_HOME = "$PWD/Source/.dotnet_home"
-$env:APPDATA = "$PWD/Source/.appdata"
-$env:LOCALAPPDATA = "$PWD/Source/.localappdata"
-dotnet restore Source/EndfieldShaderTool.slnx --configfile Source/NuGet.Config
-dotnet build Source/EndfieldShaderTool.slnx --no-restore
-dotnet run --project Source/EndfieldShaderTool.Tests --no-build
-```
-
-验证公开模板时，将 `ENDFIELD_TEMPLATE_ROOT` 指向本包的 `ShaderTemplate`；GUI 也会自动从自身同级目录寻找该模板。
-
-更多资料：[`docs/`](docs/)、[`MATERIAL_MAP_GUIDE_CN.md`](MATERIAL_MAP_GUIDE_CN.md)、[`CONTROLLERS_CN.md`](CONTROLLERS_CN.md)、[`TROUBLESHOOTING_CN.md`](TROUBLESHOOTING_CN.md)。
-
-发行包生成日期：2026-08-06。
+致谢：
+- 秋大叔@知乎：阴影以及整体渲染思路；本项目重新实现并适配 MME。
+- 新杨XIYAG ：PBR 高光、材质分层、LUT 和后处理思路参考
+- ray-mmd：预过滤环境贴图工作流和 IBL 行为参考；保留 MIT 通知。
+- 針金P及 MMD/MME 社区：HgShadow：阴影与 MME 生态基础。
+- SeaTran：雨水效果代码参考。

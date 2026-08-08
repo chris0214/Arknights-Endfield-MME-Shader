@@ -33,12 +33,16 @@ public static class ProjectValidator
         }
         if (project.Model is null) result.Error("MODEL", "尚未导入 PMX 模型。");
         if (project.Profiles.Count == 0) result.Error("PROFILES", "没有可生成的材质预设。");
-        if (project.IncludeEyeThrough && !project.Profiles.Any(x => x.Parameters.EnableEyeThrough))
-            result.Warning("EYE_THROUGH_UNUSED", "工程开启了 EyeThrough，但当前没有眼睛/眉睫材质预设启用它。");
-        if (project.IncludeEyeThrough && !project.Profiles.Any(x => x.Parameters.GenerateEyeThroughDerivedModel))
-            result.Warning("EYE_THROUGH_MODEL", "工程未指定 EyeThrough 派生模型；只会复制运行时，不会自动改写 PMX。");
         if (project.IncludeEyeThrough)
         {
+            if (!project.Profiles.Any(profile => profile.Domain == ShaderDomain.Iris && profile.Parameters.EnableEyeThrough))
+                result.Error("EYE_THROUGH_IRIS", "工程开启了眼透，但没有已确认并启用的 Iris（眼睛）材质。");
+            if (!project.Profiles.Any(profile => profile.Domain == ShaderDomain.BrowLash && profile.Parameters.EnableEyeThrough))
+                result.Error("EYE_THROUGH_BROW", "工程开启了眼透，但没有已确认并启用的 BrowLash（眉毛/睫毛）材质。");
+            if (!project.Profiles.Any(profile => profile.Domain == ShaderDomain.EyeOverlay))
+                result.Error("EYE_THROUGH_EYE_OVERLAY", "工程开启了眼透，但派生 PMX 缺少 EyeOverlay 覆盖材质。请使用 GUI 重新生成眼透派生 PMX。");
+            if (!project.Profiles.Any(profile => profile.Domain == ShaderDomain.BrowOverlay))
+                result.Error("EYE_THROUGH_BROW_OVERLAY", "工程开启了眼透，但派生 PMX 缺少 BrowOverlay 覆盖材质。请使用 GUI 重新生成眼透派生 PMX。");
             var eyeThroughFiles = new[]
             {
                 "EndfieldEyeThrough.x",
@@ -160,6 +164,10 @@ public static class ProjectValidator
             result.Error("UV1", $"{profile.ProfileName} 选择了 UV1，但 PMX 没有声明追加 UV1 通道。");
         if (profile.Domain == ShaderDomain.Hair && p.UseHighlight && p.HairUvSet != 1)
             result.Error("HAIR_HIGHLIGHT_UV", $"{profile.ProfileName} 的 Unity Highlight 必须使用追加 UV1。");
+        if (profile.Domain == ShaderDomain.Hair && p.UseAlphaClip)
+            result.Warning(
+                "HAIR_ALPHA_SEMANTIC",
+                $"{profile.ProfileName} 开启了透明裁切。终末地 Hair D.A 通常是材质/光照数据；仅在当前 Base Alpha 确实是发片覆盖遮罩时开启。");
         if (p.AlphaCutoff is < 0 or > 1) result.Error("ALPHA_CUTOFF", $"{profile.ProfileName} 的 Alpha Cutoff 必须在 0..1。");
         if (EstimateSamplers(p) > 16) result.Error("SAMPLER_LIMIT", $"{profile.ProfileName} 预计使用 {EstimateSamplers(p)} 个采样器，超过 D3D9 的 16 个上限。");
         ValidateEndfieldSlots(profile, result);
@@ -263,6 +271,7 @@ public static class ProjectValidator
         yield return ("SDF", slots.Sdf);
         yield return ("ST / Highlight", slots.St);
         yield return ("Face ColorMask", slots.ColorMask);
+        yield return ("Face Lip Specular", slots.LipSpecular);
         yield return ("HairLine", slots.HairLine);
         yield return ("MATCAP05", slots.Matcap05);
         yield return ("MATCAP07", slots.Matcap07);

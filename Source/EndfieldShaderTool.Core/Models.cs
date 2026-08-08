@@ -19,6 +19,7 @@ public enum ShaderDomain
     Mouth,
     EyeOverlay,
     BrowOverlay,
+    Hidden,
     HairShadow,
     Overlay,
     Emissive,
@@ -71,6 +72,10 @@ public sealed class TextureSlots
     public TextureReference Sdf { get; set; } = new();
     public TextureReference St { get; set; } = new();
     public TextureReference ColorMask { get; set; } = new();
+    // Dedicated face lip-highlight mask. It is intentionally separate from
+    // ST: Face ST is used for shadow receiving and must never be inferred as
+    // a lip-specular mask.
+    public TextureReference LipSpecular { get; set; } = new();
     public TextureReference HairLine { get; set; } = new();
     public TextureReference Matcap05 { get; set; } = new();
     public TextureReference Matcap07 { get; set; } = new();

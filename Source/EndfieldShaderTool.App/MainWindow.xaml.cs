@@ -48,6 +48,7 @@ public partial class MainWindow : Window
         new(ShaderDomain.Mouth, "Mouth（口腔）"),
         new(ShaderDomain.EyeOverlay, "EyeOverlay（眼透覆盖）"),
         new(ShaderDomain.BrowOverlay, "BrowOverlay（眉毛覆盖）"),
+        new(ShaderDomain.Hidden, "Hidden（隐藏材质）"),
         new(ShaderDomain.Emissive, "Emissive（自发光）"),
         new(ShaderDomain.Unassigned, "Unassigned（未分配）")
     };
@@ -347,6 +348,7 @@ public partial class MainWindow : Window
         {
             CommitEditor();
             CommitProjectHeader();
+            EnsureEyeThroughDerivedModel();
             var generator = new PackageGenerator();
             var result = generator.Generate(_project, OutputText.Text, overwrite: true);
             LogValidation(result.Validation);
@@ -358,6 +360,28 @@ public partial class MainWindow : Window
             }
         }
         catch (Exception ex) { ShowError("生成角色包失败", ex); }
+    }
+
+    private void EnsureEyeThroughDerivedModel()
+    {
+        if (_project is null || !_project.IncludeEyeThrough) return;
+
+        var result = PmxEyeThroughDerivedModelBuilder.Ensure(_project);
+        PmxEyeThroughDerivedModelBuilder.ApplyToProject(_project, result);
+        PmxText.Text = _project.PmxPath;
+        RefreshMaterialGrid();
+
+        var status = result.Status switch
+        {
+            EyeThroughDerivedModelStatus.Created => "已生成",
+            EyeThroughDerivedModelStatus.ReusedSibling => "已复用",
+            _ => "已使用"
+        };
+        var overlayText = result.Overlays.Count == 0
+            ? "当前 PMX 已具备覆盖材质"
+            : string.Join("、", result.Overlays.Select(item =>
+                $"#{item.OverlayMaterialIndex} {item.OverlayMaterialName} <- #{item.SourceMaterialIndex} {item.SourceMaterialName}"));
+        Log($"眼透派生 PMX：{status} {Path.GetFileName(result.DerivedPmxPath)}。{overlayText}。原 PMX 未被修改。");
     }
 
     private void ExportProfile_Click(object sender, RoutedEventArgs e)
@@ -584,6 +608,7 @@ public partial class MainWindow : Window
                 AddTextureSlot(texturePanel, "面部 SDF", _profile.Textures.Sdf, "sdf");
                 AddTextureSlot(texturePanel, "面部 ColorMask / ST", _profile.Textures.ColorMask, "color_mask");
                 AddTextureSlot(texturePanel, "面部 ST", _profile.Textures.St, "st");
+                AddTextureSlot(texturePanel, "嘴唇高光 Lip Highlight（可选）", _profile.Textures.LipSpecular, "lip_specular");
                 break;
             case ShaderDomain.Hair:
                 AddTextureSlot(texturePanel, "法线 Normal / HN", _profile.Textures.Normal, "normal");
@@ -633,7 +658,12 @@ public partial class MainWindow : Window
         basic.Content = basicPanel;
         var blendModeBox = AddBlendMode(basicPanel, _profile.Parameters.BlendMode);
         AddEnum(basicPanel, "Cull Mode", typeof(CullMode), value => _profile.Parameters.CullMode = (CullMode)value!, _profile.Parameters.CullMode);
-        var alphaClipBox = AddBool(basicPanel, "Alpha Clip（镂空裁剪）", nameof(ShaderParameters.UseAlphaClip), v => _profile.Parameters.UseAlphaClip = v, _profile.Parameters.UseAlphaClip);
+        var alphaClipLabel = _profile.Domain == ShaderDomain.Hair
+            ? "Alpha Clip（真实镂空发片）"
+            : "Alpha Clip（镂空裁剪）";
+        var alphaClipBox = AddBool(basicPanel, alphaClipLabel, nameof(ShaderParameters.UseAlphaClip), v => _profile.Parameters.UseAlphaClip = v, _profile.Parameters.UseAlphaClip);
+        if (_profile.Domain == ShaderDomain.Hair)
+            alphaClipBox.ToolTip = "终末地 Hair D.A 通常是材质/光照数据，不是透明度。仅当当前 Base Alpha 确实是覆盖遮罩时开启。";
         blendModeBox.SelectionChanged += (_, _) =>
         {
             if (blendModeBox.SelectedItem is BlendModeOption { Value: not BlendMode.Opaque })
@@ -1064,34 +1094,36 @@ public partial class MainWindow : Window
         if (_profile is null) return;
         var folder = PickFolder();
         if (folder is null) return;
-        AutoAssignTextures(Directory.GetFiles(folder));
+        AutoAssignTextures(DiscoverTextureFiles(folder));
         BuildEditor();
+    }
+
+    private static IEnumerable<string> DiscoverTextureFiles(string folder)
+    {
+        try
+        {
+            var otherTex = Directory.EnumerateDirectories(folder)
+                .FirstOrDefault(path => string.Equals(Path.GetFileName(path), "other tex", StringComparison.OrdinalIgnoreCase));
+            var source = otherTex ?? folder;
+            var recursive = otherTex is not null
+                || string.Equals(Path.GetFileName(folder), "other tex", StringComparison.OrdinalIgnoreCase);
+            return Directory.EnumerateFiles(source, "*", recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly)
+                .Where(TextureAutoMatcher.IsSupportedTextureFile)
+                .ToArray();
+        }
+        catch (IOException) { return Array.Empty<string>(); }
+        catch (UnauthorizedAccessException) { return Array.Empty<string>(); }
     }
 
     private void AutoAssignTextures(IEnumerable<string> files)
     {
         if (_profile is null) return;
-        var suggestions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var file in files.Where(x => File.Exists(x)))
-        {
-            var name = Path.GetFileNameWithoutExtension(file).ToLowerInvariant();
-            var key = name.Contains("matcap") && (name.Contains("07") || name.Contains("manual")) ? "Matcap07" :
-                name.Contains("matcap") && name.Contains("05") ? "Matcap05" :
-                name.Contains("matcap") || name.StartsWith("mc") ? "Matcap05" :
-                name.Contains("hairline") || name.Contains("hair_line") ? "HairLine" :
-                name.Contains("sdf") ? "SDF" :
-                name.Contains("colormask") || name.Contains("color_mask") || name.Contains("mask") ? "ColorMask" :
-                name.EndsWith("_st") || name == "st" || name.Contains("_st_") || name.Contains("st_texture") || name.Contains("_skinmask") ? "ST" :
-                name.Contains("_rd") || name.EndsWith("rd") || name.Contains("diffuse_rd") ? "RD" :
-                name.Contains("_rs") || name.EndsWith("rs") || name.Contains("specular") ? "RS" :
-                name.Contains("lut") || name.Contains("preintegrated") || name.Contains("fgd") ? "LUT" :
-                name.Contains("property") || name.Contains("mro") || name.Contains("orm") || name.EndsWith("_p") ? "Property" :
-                name.EndsWith("_n") || name.EndsWith("_hn") || name.Contains("normal") ? "Normal" :
-                name.EndsWith("_d") || name.Contains("diffuse") || name.Contains("albedo") || name.Contains("basecolor") ? "Base" : null;
-            if (key is not null && !suggestions.ContainsKey(key)) suggestions[key] = file;
-        }
+        var matchResult = TextureAutoMatcher.Suggest(_profile.Domain, files.Where(File.Exists));
+        var suggestions = matchResult.Matches.ToDictionary(pair => pair.Key, pair => pair.Value.SourcePath, StringComparer.OrdinalIgnoreCase);
         if (suggestions.Count == 0) return;
         var summary = string.Join(Environment.NewLine, suggestions.Select(pair => $"{pair.Key}: {Path.GetFileName(pair.Value)}"));
+        if (matchResult.AmbiguousSlots.Count > 0)
+            summary += $"\n\n以下槽位存在同优先级候选，已保留为空以避免错绑：{string.Join("、", matchResult.AmbiguousSlots)}";
         if (MessageBox.Show($"确认使用以下自动匹配结果吗？\n\n{summary}", "确认贴图匹配", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         CommitEditor(refreshGrid: false);
         var slots = new Dictionary<string, TextureReference>(StringComparer.OrdinalIgnoreCase)
@@ -1105,6 +1137,7 @@ public partial class MainWindow : Window
             ["SDF"] = _profile.Textures.Sdf,
             ["ST"] = _profile.Textures.St,
             ["ColorMask"] = _profile.Textures.ColorMask,
+            ["LipSpecular"] = _profile.Textures.LipSpecular,
             ["HairLine"] = _profile.Textures.HairLine,
             ["Matcap05"] = _profile.Textures.Matcap05,
             ["Matcap07"] = _profile.Textures.Matcap07

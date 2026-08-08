@@ -33,6 +33,7 @@ static string ExpectedRuntime(ShaderDomain domain) => domain switch
     ShaderDomain.Iris or ShaderDomain.EyeWhite => "endfield_facial.hlsl",
     ShaderDomain.EyeHighlight => "endfield_eye_highlight.hlsl",
     ShaderDomain.BrowLash or ShaderDomain.Mouth or ShaderDomain.EyeOverlay or ShaderDomain.BrowOverlay => "endfield_facial.hlsl",
+    ShaderDomain.Hidden => "endfield_hidden.hlsl",
     _ => "endfield_shader.hlsl"
 };
 
@@ -123,6 +124,7 @@ static void ConfigureFeatureRichProfile(MaterialProfile profile, string template
             profile.Textures.Lut = TemplateTexture(templateRoot, fgd);
             profile.Textures.St = TemplateTexture(templateRoot, atlas);
             profile.Textures.ColorMask = TemplateTexture(templateRoot, matcap);
+            profile.Textures.LipSpecular = TemplateTexture(templateRoot, matcap);
             break;
         case ShaderDomain.Hair:
             profile.Textures.Normal = TemplateTexture(templateRoot, rainPhase);
@@ -208,6 +210,9 @@ static void VerifyGeneratedDomainMatrix(EndfieldProject project, string packageR
             $"{profile.Domain} selected the wrong runtime wrapper.");
         Require(!wrapper.Contains("../internal/", StringComparison.Ordinal),
             $"{profile.Domain} escaped the preset-local internal runtime.");
+        if (profile.Domain == ShaderDomain.Face)
+            Require(ReadShader(include).Contains("#define EF_FACE_LIP_SPECULAR_ENABLED 0", StringComparison.Ordinal),
+                "Generic face generation must not treat Face ST as a lip-specular mask.");
         if (profile.Domain == ShaderDomain.EyeWhite)
             Require(wrapper.Contains("#include \"internal/endfield_eye_white.hlsl\"", StringComparison.Ordinal),
                 "EyeWhite wrapper is missing its dedicated prelude.");
@@ -234,6 +239,24 @@ static void VerifyGeneratedDomainMatrix(EndfieldProject project, string packageR
     var emm = Encoding.GetEncoding(936).GetString(File.ReadAllBytes(emmPath));
     Require(!emm.Contains(".endfieldstage_", StringComparison.OrdinalIgnoreCase),
         "EMM retained a staging-directory path.");
+    var objectSectionStart = emm.IndexOf("[Object]", StringComparison.Ordinal);
+    var effectSectionStart = emm.IndexOf("[Effect]", StringComparison.Ordinal);
+    Require(objectSectionStart >= 0 && effectSectionStart > objectSectionStart,
+        "EMM is missing its Object or Effect section.");
+    var objectSection = emm[objectSectionStart..effectSectionStart];
+    Require(!objectSection.Contains(".show =", StringComparison.OrdinalIgnoreCase),
+        "EMM Object section contains an invalid visibility directive.");
+    if (project.IncludeEyeThrough)
+    {
+        var accessoryIndex = objectSection.IndexOf("Acs2 =", StringComparison.Ordinal);
+        var modelIndex = objectSection.IndexOf("Pmd2 =", StringComparison.Ordinal);
+        Require(accessoryIndex >= 0 && modelIndex > accessoryIndex,
+            "EMM must declare the eye-through accessory before the model object.");
+    }
+    for (var index = 3; index <= 8; index++)
+        Require(emm.Contains($"Pmd{index} = none", StringComparison.Ordinal)
+                && emm.Contains($"Pmd{index}.show = false", StringComparison.Ordinal),
+            $"EMM must exclude controller Pmd{index} from normal and RT passes.");
     foreach (var profile in project.Profiles)
     {
         var binding = ProjectService.GetBindings(profile).Single();
@@ -260,6 +283,7 @@ static void VerifyGeneratedDomainMatrix(EndfieldProject project, string packageR
     Require(hair.Contains("#define EF_HAIR_FINAL_RIM_PASS 1", StringComparison.Ordinal)
             && hair.Contains("#define EF_HAIR_RD_KK_RS_COMPOSITE_DEBUG 1", StringComparison.Ordinal)
             && hair.Contains("#define EF_HAIR_CONTROLLER_RANGE5_ENABLED 1", StringComparison.Ordinal)
+            && hair.Contains("#define EF_USE_ALPHA_CLIP 0", StringComparison.Ordinal)
             && hair.Contains("#define EF_HAIR_SPEC_OFF 0", StringComparison.Ordinal),
         "Hair production rim/highlight/controller macros were not generated.");
     var skin = IncludeFor(ShaderDomain.Skin);
@@ -278,6 +302,8 @@ static void VerifyGeneratedDomainMatrix(EndfieldProject project, string packageR
     var face = IncludeFor(ShaderDomain.Face);
     Require(face.Contains("#define EF_FACE_CMM_TEXTURE_RESOURCE \"../../textures/common/Eff_MatCap_019.png\"", StringComparison.Ordinal)
             && face.Contains("#define EF_FACE_SHADOW_RECEIVER_ST_TEXTURE_RESOURCE \"../../textures/common/Eff_MatCap_019_manual_lod.png\"", StringComparison.Ordinal)
+            && face.Contains("#define EF_FACE_LIP_SPECULAR_TEXTURE_RESOURCE \"../../textures/common/Eff_MatCap_019.png\"", StringComparison.Ordinal)
+            && face.Contains("#define EF_FACE_LIP_SPECULAR_ENABLED 1", StringComparison.Ordinal)
             && face.Contains("#define EF_FACE_SSS_ENABLED 1", StringComparison.Ordinal)
             && face.Contains("#define EF_FACE_STENCIL_WRITE_ENABLED 1", StringComparison.Ordinal),
         "Face CMM/ST/SSS resource mapping was not generated correctly.");
@@ -303,10 +329,43 @@ static void VerifyFxcPackage(string packageRoot)
 Require(ProjectService.Slugify("  Chen 千语  ") == "chen", "Role slugification changed unexpectedly.");
 Require(MaterialClassifier.Suggest(new PmxMaterialInfo { Name = "眼白" }) == ShaderDomain.EyeWhite,
     "Eye-white material classification failed.");
+Require(MaterialDefaults.CreateParameters(ShaderDomain.EyeWhite).CullMode == CullMode.None,
+    "Eye-white materials must default to double-sided rendering.");
+Require(!MaterialDefaults.CreateParameters(ShaderDomain.Hair).UseAlphaClip,
+    "Endfield hair D.A must not be treated as coverage by default.");
 Require(MaterialClassifier.Suggest(new PmxMaterialInfo { Name = "hair_main" }) == ShaderDomain.Hair,
     "Hair material classification failed.");
 Require(ProjectService.ShouldPromptForPmxSelection("missing.pmx", null),
     "Missing PMX paths must request a browse selection.");
+
+var faceTextureMatches = TextureAutoMatcher.Suggest(ShaderDomain.Face, new[]
+{
+    "C:\\role\\other tex\\T_actor_common_body_01_RD.png",
+    "C:\\role\\other tex\\T_actor_common_face_01_RD.png",
+    "C:\\role\\other tex\\T_actor_common_female_face_01_cm_M.png",
+    "C:\\role\\other tex\\T_actor_common_female_face_01_SDF.png",
+    "C:\\role\\other tex\\T_actor_common_female_face_01_ST.png",
+    "C:\\role\\other tex\\T_actor_common_face_01_hl_M.png",
+    "C:\\role\\other tex\\T_actor_common_femaleskincolor02_lut_D.png"
+});
+Require(faceTextureMatches.Matches["RD"].SourcePath.EndsWith("face_01_RD.png", StringComparison.OrdinalIgnoreCase),
+    "Face auto-match selected a body RD instead of the face RD.");
+Require(faceTextureMatches.Matches.ContainsKey("ColorMask")
+        && faceTextureMatches.Matches.ContainsKey("LipSpecular"),
+    "Face auto-match did not recognize CM or the dedicated lip-highlight texture.");
+Require(faceTextureMatches.Matches["LUT"].SourcePath.Contains("skincolor", StringComparison.OrdinalIgnoreCase),
+    "Face auto-match did not prioritize the skin-color LUT.");
+
+var clothTextureMatches = TextureAutoMatcher.Suggest(ShaderDomain.Cloth, new[]
+{
+    "C:\\role\\other tex\\T_actor_chen_hair_01_P.png",
+    "C:\\role\\other tex\\T_actor_chen_cloth_01_P.png",
+    "C:\\role\\other tex\\T_actor_common_hair_01_RD.png",
+    "C:\\role\\other tex\\T_actor_common_cloth_04_RD.png"
+});
+Require(clothTextureMatches.Matches["Property"].SourcePath.EndsWith("cloth_01_P.png", StringComparison.OrdinalIgnoreCase)
+        && clothTextureMatches.Matches["RD"].SourcePath.EndsWith("cloth_04_RD.png", StringComparison.OrdinalIgnoreCase),
+    "Cloth auto-match did not reject hair texture candidates.");
 
 static string FindTemplate()
 {

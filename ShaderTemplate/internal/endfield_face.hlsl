@@ -361,16 +361,6 @@ sampler2D EfFaceLipSpecularSampler = sampler_state {
     AddressU = CLAMP; AddressV = CLAMP;
 };
 #endif
-#ifdef EF_FACE_ST_TEXTURE_RESOURCE
-texture2D EfFaceStTexture <
-    string ResourceName = EF_FACE_ST_TEXTURE_RESOURCE;
->;
-sampler2D EfFaceStSampler = sampler_state {
-    texture = <EfFaceStTexture>;
-    MinFilter = LINEAR; MagFilter = LINEAR; MipFilter = LINEAR;
-    AddressU = CLAMP; AddressV = CLAMP;
-};
-#endif
 #endif
 
 // MME semantic globals used by the opaque object/object_ss variants.
@@ -847,13 +837,6 @@ float4 EfFacePS(EfFaceVaryings input, uniform bool useTexture) : COLOR0
 #ifdef EF_FACE_LIP_SPECULAR_TEXTURE_RESOURCE
     lipSpecularMask = tex2D(EfFaceLipSpecularSampler,
         lipSpecularUv).r;
-#elif defined(EF_FACE_ST_TEXTURE_RESOURCE)
-    // Generic fallback: use a selected Face ST mask when the model has one.
-    lipSpecularMask = tex2D(EfFaceStSampler, lipSpecularUv).r;
-#else
-    // Last-resort fallback: opaque MATERIALTEXTURE alpha naturally produces
-    // no highlight, while authored alpha masks remain usable.
-    lipSpecularMask = tex2D(EfFaceMainSampler, lipSpecularUv).a;
 #endif
     float lipSdfDot = dot(projectedLight, headFront);
     float lipLightFade = EfFaceControllerLipLightFade(

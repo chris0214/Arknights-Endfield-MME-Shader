@@ -19,7 +19,6 @@ public static class EmmGenerator
             string.Empty,
             "[Object]",
             $"Acs1 = {shadowX}",
-            "Acs1.show = false",
             $"Pmd2 = {modelPath}",
             $"Pmd3 = {Path.Combine(output, "controller", "EndfieldHair_controller_Range5.pmx")}",
             $"Pmd4 = {Path.Combine(output, "controller", "EndfieldFace_controller.pmx")}",
@@ -35,13 +34,12 @@ public static class EmmGenerator
 
         if (project.IncludeEyeThrough)
         {
-            lines.Insert(7, $"Acs2 = {Path.Combine(output, "EndfieldEyeThrough.x")}");
-            lines.Insert(8, "Acs2.show = false");
+            lines.Insert(5, $"Acs2 = {Path.Combine(output, "EndfieldEyeThrough.x")}");
         }
 
         foreach (var mapping in MaterialMappings(project, output))
             lines.Add($"Pmd2[{mapping.Binding.MaterialIndex}] = {mapping.FxPath}");
-        lines.Add("Pmd3 = none");
+        for (var index = 3; index <= 8; index++) lines.Add($"Pmd{index} = none");
 
         AddShadowSection(lines, project, output, "ZMDShadowMap", "ZMDshadow_ShadowMap.fxsub",
             static profile => profile.CastExcellentShadow);
@@ -56,7 +54,7 @@ public static class EmmGenerator
             lines.Add("Acs1.show = false");
             lines.Add("Acs2.show = false");
             lines.Add($"Pmd2 = {Path.Combine(output, "EndfieldEyeThrough_Capture.fxsub")}");
-            for (var index = 3; index <= 7; index++) lines.Add($"Pmd{index}.show = false");
+            for (var index = 3; index <= 8; index++) lines.Add($"Pmd{index}.show = false");
         }
         return string.Join("\r\n", lines) + "\r\n";
     }
@@ -79,6 +77,7 @@ public static class EmmGenerator
         lines.Add($"[Effect@{section}]");
         lines.Add("Owner = Acs1");
         lines.Add("Acs1.show = false");
+        if (project.IncludeEyeThrough) lines.Add("Acs2.show = false");
         lines.Add("Pmd2 = none");
         var effectPath = Path.Combine(output, effectFile);
         foreach (var profile in project.Profiles.Where(includeProfile))
@@ -86,8 +85,11 @@ public static class EmmGenerator
             foreach (var binding in ProjectService.GetBindings(profile).OrderBy(x => x.MaterialIndex))
                 lines.Add($"Pmd2[{binding.MaterialIndex}] = {effectPath}");
         }
-        lines.Add("Pmd3 = none");
-        lines.Add("Pmd3.show = false");
+        for (var index = 3; index <= 8; index++)
+        {
+            lines.Add($"Pmd{index} = none");
+            lines.Add($"Pmd{index}.show = false");
+        }
     }
 
     private static IEnumerable<(MaterialBinding Binding, string FxPath)> MaterialMappings(EndfieldProject project, string output)

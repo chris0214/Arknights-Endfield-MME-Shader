@@ -219,6 +219,7 @@ public sealed class PackageGenerator
             ["sdf"] = profile.Textures.Sdf,
             ["st"] = profile.Textures.St,
             ["color_mask"] = profile.Textures.ColorMask,
+            ["lip_specular"] = profile.Textures.LipSpecular,
             ["matcap05"] = profile.Textures.Matcap05,
             ["matcap07"] = profile.Textures.Matcap07,
             ["hair_line"] = profile.Textures.HairLine
@@ -315,6 +316,7 @@ public sealed class PackageGenerator
         {
             AddTexture(lines, "EF_FACE_SKIN_LUT_TEXTURE_RESOURCE", textures, "lut");
             AddTexture(lines, "EF_FACE_SDF_TEXTURE_RESOURCE", textures, "sdf");
+            AddTexture(lines, "EF_FACE_LIP_SPECULAR_TEXTURE_RESOURCE", textures, "lip_specular");
         }
         if (profile.Domain == ShaderDomain.Hair)
         {
@@ -572,7 +574,9 @@ public sealed class PackageGenerator
         lines.Add("#define EF_FACE_FINAL_SOFT_EXPOSURE_ENABLED 1");
         lines.Add("#define EF_FACE_FINAL_SOFT_EXPOSURE 1.6666667");
         lines.Add($"#define EF_FACE_SSS_ENABLED {Bool(hasCmm)}");
-        lines.Add($"#define EF_FACE_LIP_SPECULAR_ENABLED {Bool(hasSt)}");
+        // Face ST stores feature/shadow-receiver data, not a lip-highlight mask.
+        // Only enable lips when a dedicated mask was explicitly supplied.
+        lines.Add($"#define EF_FACE_LIP_SPECULAR_ENABLED {Bool(textures.ContainsKey("lip_specular"))}");
         lines.Add($"#define EF_FACE_RIM_ENABLED {Bool(hasCmm)}");
         lines.Add($"#define EF_FACE_STENCIL_WRITE_ENABLED {Bool(hasSt)}");
         lines.Add($"#define EF_FACE_SHADOW_RECEIVER_ST_ENABLED {Bool(hasSt)}");
@@ -608,6 +612,7 @@ public sealed class PackageGenerator
             ShaderDomain.Iris or ShaderDomain.EyeWhite => "endfield_facial.hlsl",
             ShaderDomain.EyeHighlight => "endfield_eye_highlight.hlsl",
             ShaderDomain.BrowLash or ShaderDomain.Mouth or ShaderDomain.EyeOverlay or ShaderDomain.BrowOverlay => "endfield_facial.hlsl",
+            ShaderDomain.Hidden => "endfield_hidden.hlsl",
             _ => "endfield_shader.hlsl"
         };
         lines.Add($"#include \"internal/{shaderInclude}\"");
@@ -711,6 +716,8 @@ public sealed class PackageGenerator
         sb.AppendLine();
         sb.AppendLine($"- 本包使用 {backendName} 作为自阴影后端，不要同时加载其他自阴影后端。");
         sb.AppendLine("- Face 默认不接收几何自阴影，只使用 SDF。");
+        if (project.IncludeEyeThrough)
+            sb.AppendLine($"- 本包启用了眼透：请在 MMD 中加载派生模型 `{Path.GetFileName(project.PmxPath)}`，不要把本包 EMM 映射回原始 PMX。该派生文件只追加眼睛/眉睫覆盖材质，原模型不会被修改。");
         sb.AppendLine($"- HairShadow、眉毛、眼睛和口腔小部件通常应在{mappingPages}排除。");
         sb.AppendLine($"- `Bright/Dark` 调整合成后的二分与几何阴影颜色；`SelfShadow+/-` 单独调整 {backendName} 接收强度。");
         sb.AppendLine("- `Exposure+/-` 以 stops 调整全部 Endfield 材质曝光，不影响场景和后处理。");
@@ -773,6 +780,7 @@ public sealed class PackageGenerator
         yield return slots.Sdf;
         yield return slots.St;
         yield return slots.ColorMask;
+        yield return slots.LipSpecular;
         yield return slots.HairLine;
         yield return slots.Matcap05;
         yield return slots.Matcap07;
@@ -1006,6 +1014,7 @@ public sealed class PackageGenerator
         ShaderDomain.Eye => 3,
         ShaderDomain.FaceParts or ShaderDomain.HairShadow or ShaderDomain.Overlay => 4,
         ShaderDomain.Emissive => 5,
+        ShaderDomain.Hidden => 0,
         ShaderDomain.Transparent => 0,
         _ => 0
     };

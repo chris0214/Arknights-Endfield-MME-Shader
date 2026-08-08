@@ -182,12 +182,22 @@ public static class MaterialDefaults
             UseRamp = domain is ShaderDomain.Hair or ShaderDomain.Skin or ShaderDomain.Face or ShaderDomain.Cloth or ShaderDomain.Body or ShaderDomain.Prop,
             UseMatcap = domain is ShaderDomain.Iris or ShaderDomain.Cloth or ShaderDomain.Body or ShaderDomain.Prop,
             UseSdf = domain == ShaderDomain.Face,
-            UseAlphaClip = domain is ShaderDomain.Hair or ShaderDomain.BrowLash or ShaderDomain.FaceParts or ShaderDomain.EyeHighlight,
+            // Endfield hair D.A is authored material data (used by the
+            // lighting/SSS chain), not a generic coverage mask. Treating it
+            // as cutout alpha removes entire hair-card regions and resembles
+            // incorrect back-face culling. Genuine cutout hair remains an
+            // explicit per-profile option in the editor.
+            UseAlphaClip = domain is ShaderDomain.BrowLash or ShaderDomain.FaceParts or ShaderDomain.EyeHighlight,
             UseSkinLighting = domain == ShaderDomain.Skin,
             UseHighlight = domain == ShaderDomain.Hair,
             UsePmxSphere = domain is ShaderDomain.Hair or ShaderDomain.Cloth or ShaderDomain.Body or ShaderDomain.Prop,
             BlendMode = domain is ShaderDomain.BrowLash or ShaderDomain.FaceParts ? BlendMode.AlphaZWrite : BlendMode.Opaque,
-            CullMode = domain is ShaderDomain.Iris or ShaderDomain.EyeWhite ? CullMode.Ccw : CullMode.None,
+            // Eye-white meshes are frequently authored as thin, split shells
+            // with inconsistent winding between exporters. Culling them can
+            // erase the whole sclera while the separate iris still renders.
+            // Keep the iris's established CCW default, but make EyeWhite
+            // double-sided for a safe generic project default.
+            CullMode = domain == ShaderDomain.Iris ? CullMode.Ccw : CullMode.None,
             RampRows = domain is ShaderDomain.Cloth or ShaderDomain.Body or ShaderDomain.Prop ? 8f : 1f
         };
         if (domain == ShaderDomain.Hair)
@@ -302,6 +312,7 @@ public static class MaterialDefaults
             case "lut":
             case "rs":
             case "colormask":
+            case "lipspecular":
             case "hairline":
             case "ramp": break;
             case "lightcurve": profile.Parameters.UseLightCurve = selected; break;

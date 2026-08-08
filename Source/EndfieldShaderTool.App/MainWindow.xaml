@@ -406,7 +406,7 @@
                     <CheckBox x:Name="GenerateEmmCheck" Content="生成 EMM" IsChecked="True" Margin="0,0,12,0"
                               ToolTip="生成带当前绝对路径的 MME 自动映射文件；移动目录后需要重新生成" />
                     <CheckBox x:Name="EyeThroughCheck" Content="眼透" IsChecked="True" Margin="0,0,10,0"
-                              ToolTip="工程级眼睛/眉毛/睫毛透视遮挡效果" />
+                              ToolTip="生成或复用同目录的眼透派生 PMX；只在 Iris 与 BrowLash 材质已明确时执行，绝不覆盖原模型" />
                     <CheckBox x:Name="PostProcessingCheck" Content="后处理" IsChecked="True" Margin="0,0,12,0"
                               ToolTip="包含全局 Bloom、Tonemap、曝光、白平衡和可选锐化" />
                     <Button Click="Compile_Click" ToolTip="静态验证并使用 FXC 编译">

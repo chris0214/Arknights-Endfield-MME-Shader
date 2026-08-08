@@ -9,6 +9,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using WinForms = System.Windows.Forms;
 using EndfieldShaderTool.Core;
@@ -39,16 +40,23 @@ public partial class MainWindow : Window
     {
         new(ShaderDomain.Face, "Face（面部）"),
         new(ShaderDomain.Hair, "Hair（头发）"),
+        new(ShaderDomain.HairShadow, "HairShadow（发影）"),
         new(ShaderDomain.Skin, "Skin（皮肤）"),
         new(ShaderDomain.Cloth, "Cloth（衣服）"),
+        new(ShaderDomain.Body, "Body（身体）"),
+        new(ShaderDomain.Prop, "Prop（道具）"),
+        new(ShaderDomain.Transparent, "Transparent（透明材质）"),
         new(ShaderDomain.Iris, "Iris（虹膜/瞳孔）"),
         new(ShaderDomain.EyeWhite, "EyeWhite（眼白）"),
         new(ShaderDomain.EyeHighlight, "EyeHighlight（眼部高光）"),
         new(ShaderDomain.BrowLash, "BrowLash（眉毛/睫毛）"),
+        new(ShaderDomain.FaceParts, "FaceParts（面部部件）"),
         new(ShaderDomain.Mouth, "Mouth（口腔）"),
         new(ShaderDomain.EyeOverlay, "EyeOverlay（眼透覆盖）"),
         new(ShaderDomain.BrowOverlay, "BrowOverlay（眉毛覆盖）"),
         new(ShaderDomain.Hidden, "Hidden（隐藏材质）"),
+        new(ShaderDomain.Overlay, "Overlay（叠加材质）"),
+        new(ShaderDomain.Eye, "Eye（眼部通用）"),
         new(ShaderDomain.Emissive, "Emissive（自发光）"),
         new(ShaderDomain.Unassigned, "Unassigned（未分配）")
     };
@@ -64,10 +72,18 @@ public partial class MainWindow : Window
     private ComboBox? _headBoneBox;
     private readonly List<CheckBox> _materialBindingBoxes = new();
     private string? _lastGeneratedDirectory;
+    private readonly DispatcherTimer _materialSelectionTimer;
+    private bool _isApplyingMaterialSelection;
+    private static readonly Dictionary<string, BitmapImage> PreviewCache = new(StringComparer.OrdinalIgnoreCase);
 
     public MainWindow()
     {
         InitializeComponent();
+        _materialSelectionTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(80)
+        };
+        _materialSelectionTimer.Tick += MaterialSelectionTimer_Tick;
         TemplateText.Text = FindTemplateRoot() ?? string.Empty;
         OutputText.Text = GetDefaultOutputDirectory();
         FxcText.Text = FxcCompiler.Find() ?? string.Empty;
@@ -453,13 +469,38 @@ public partial class MainWindow : Window
 
     private void MaterialsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        CommitEditor(refreshGrid: false);
-        var selected = MaterialsGrid.SelectedItems.Cast<MaterialProfile>().ToArray();
-        _profile = selected.Length == 1 ? selected[0] : null;
-        SelectedMaterialText.Text = _profile is null
-            ? selected.Length > 1 ? $"已选择 {selected.Length} 个材质球，点击“合并所选”" : "未选择材质球"
-            : $"PMX #{_profile.MaterialIndexDisplay}  ·  {_profile.ProfileName}  ·  {DomainLabel(_profile.Domain)}";
-        BuildEditor();
+        if (_isApplyingMaterialSelection) return;
+        _materialSelectionTimer.Stop();
+        _materialSelectionTimer.Start();
+    }
+
+    private void MaterialSelectionTimer_Tick(object? sender, EventArgs e)
+    {
+        _materialSelectionTimer.Stop();
+        if (_isApplyingMaterialSelection || _project is null) return;
+
+        _isApplyingMaterialSelection = true;
+        try
+        {
+            CommitEditor(refreshGrid: false);
+            var selected = MaterialsGrid.SelectedItems.Cast<MaterialProfile>().ToArray();
+            _profile = selected.Length == 1 ? selected[0] : null;
+            SelectedMaterialText.Text = _profile is null
+                ? selected.Length > 1 ? $"已选择 {selected.Length} 个材质球，点击“合并所选”" : "未选择材质球"
+                : $"PMX #{_profile.MaterialIndexDisplay}  ·  {_profile.ProfileName}  ·  {DomainLabel(_profile.Domain)}";
+            BuildEditor();
+        }
+        catch (Exception ex)
+        {
+            // Selection changes are user-driven and can happen while WPF is
+            // recycling DataGrid rows. Keep a malformed preview/material from
+            // terminating the whole editor process.
+            Log($"切换材质球失败：{ex.Message}");
+        }
+        finally
+        {
+            _isApplyingMaterialSelection = false;
+        }
     }
 
     private void Editor_Drop(object sender, DragEventArgs e)
@@ -866,7 +907,7 @@ public partial class MainWindow : Window
     }
 
     private static string DomainLabel(ShaderDomain domain) =>
-        DomainOptions.First(option => option.Value == domain).Label;
+        DomainOptions.FirstOrDefault(option => option.Value == domain)?.Label ?? domain.ToString();
 
     private void AddTextureSlot(Panel panel, string label, TextureReference reference, string key)
     {
@@ -1162,8 +1203,15 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
         try
         {
+            if (PreviewCache.TryGetValue(path, out var cached))
+            {
+                image.Source = cached;
+                return;
+            }
             var bitmap = new BitmapImage();
             bitmap.BeginInit(); bitmap.UriSource = new Uri(path); bitmap.DecodePixelWidth = 96; bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.EndInit();
+            bitmap.Freeze();
+            PreviewCache[path] = bitmap;
             image.Source = bitmap;
         }
         catch { }

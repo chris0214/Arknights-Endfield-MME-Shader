@@ -85,7 +85,7 @@ public sealed class PackageGenerator
                 var includeDirectory = Path.Combine(staging, "presets", project.RoleSlug, "includes");
                 Directory.CreateDirectory(includeDirectory);
                 var packageTexturePaths = CopyProfileTextures(project, profile, staging, profileSlug, textureMap, generated.GeneratedFiles);
-                var includeContent = BuildInclude(profile, packageTexturePaths);
+                var includeContent = BuildInclude(project, profile, packageTexturePaths);
                 var includeHash = ComputeHash(Encoding.UTF8.GetBytes(includeContent));
                 if (!sharedIncludes.TryGetValue(includeHash, out var includeName))
                 {
@@ -252,7 +252,10 @@ public sealed class PackageGenerator
         return values;
     }
 
-    private static string BuildInclude(MaterialProfile profile, IReadOnlyDictionary<string, string> textures)
+    private static string BuildInclude(
+        EndfieldProject project,
+        MaterialProfile profile,
+        IReadOnlyDictionary<string, string> textures)
     {
         var p = profile.Parameters;
         var lines = new List<string>
@@ -270,11 +273,15 @@ public sealed class PackageGenerator
             $"#define EF_SPEC_POW_STRENGTH {F(p.SpecularPower)}",
             $"#define EF_SPEC_BACK_F0 {Color3(p.SpecularColor)}"
         };
-        AddEndfieldMacros(lines, profile, textures);
+        AddEndfieldMacros(project, lines, profile, textures);
         return string.Join(Environment.NewLine, lines) + Environment.NewLine;
     }
 
-    private static void AddEndfieldMacros(ICollection<string> lines, MaterialProfile profile, IReadOnlyDictionary<string, string> textures)
+    private static void AddEndfieldMacros(
+        EndfieldProject project,
+        ICollection<string> lines,
+        MaterialProfile profile,
+        IReadOnlyDictionary<string, string> textures)
     {
         var p = profile.Parameters;
         var prefix = profile.Domain switch
@@ -323,7 +330,11 @@ public sealed class PackageGenerator
             AddTexture(lines, "EF_HAIR_SPEC_TEXTURE", textures, "rs");
             AddTexture(lines, "EF_HAIR_ANISO_NOISE_TEXTURE", textures, "st");
             AddTexture(lines, "EF_HAIR_LINE_TEXTURE", textures, "hair_line");
-            AddHairProductionMacros(lines, p, textures);
+            var faceShadowReceiverAvailable = project.Profiles.Any(candidate =>
+                candidate.Domain == ShaderDomain.Face
+                && candidate.Textures.St.IsSelected
+                && candidate.Parameters.UseSdf);
+            AddHairProductionMacros(lines, p, textures, faceShadowReceiverAvailable);
         }
         if (profile.Domain == ShaderDomain.Cloth)
         {
@@ -351,17 +362,27 @@ public sealed class PackageGenerator
         if (profile.Domain == ShaderDomain.Iris)
         {
             lines.Add("#define EF_FACIAL_IRIS_ENABLED 1");
+            AddIrisProductionMacros(lines, project.IncludeEyeThrough && p.EnableEyeThrough);
             lines.Add($"#define EF_EYE_IRIS_MATCAP05_ENABLED {(p.UseMatcap05 ? 1 : 0)}");
             lines.Add($"#define EF_EYE_IRIS_MATCAP07_ENABLED {(p.UseMatcap07 ? 1 : 0)}");
             AddTexture(lines, "EF_EYE_IRIS_MATCAP05_TEXTURE", textures, "matcap05");
             AddTexture(lines, "EF_EYE_IRIS_MATCAP07_TEXTURE", textures, "matcap07");
         }
         if (profile.Domain == ShaderDomain.EyeWhite)
+        {
             lines.Add("#define EF_FACIAL_EYE_WHITE_ENABLED 1");
+            AddEyeWhiteProductionMacros(lines, project.IncludeEyeThrough);
+        }
         if (profile.Domain is ShaderDomain.EyeOverlay or ShaderDomain.BrowOverlay)
+        {
             lines.Add("#define EF_FACIAL_OVERLAY_ENABLED 1");
+            AddOverlayProductionMacros(lines);
+        }
         if (profile.Domain == ShaderDomain.EyeHighlight)
+        {
             AddTexture(lines, "EF_EYE_HL_TEXTURE_RESOURCE", textures, "base");
+            AddEyeHighlightProductionMacros(lines);
+        }
         if (profile.Domain == ShaderDomain.Face)
         {
             lines.Add($"#define EF_FACE_SDF_ENABLED {(p.UseSdf ? 1 : 0)}");
@@ -379,7 +400,8 @@ public sealed class PackageGenerator
     private static void AddHairProductionMacros(
         ICollection<string> lines,
         ShaderParameters p,
-        IReadOnlyDictionary<string, string> textures)
+        IReadOnlyDictionary<string, string> textures,
+        bool faceShadowReceiverAvailable)
     {
         var hasAssetComposite = textures.ContainsKey("normal")
             && textures.ContainsKey("property")
@@ -388,6 +410,7 @@ public sealed class PackageGenerator
             && textures.ContainsKey("st")
             && textures.ContainsKey("hair_line");
         lines.Add("#define EF_HAIR_FINAL_RIM_PASS 1");
+        lines.Add($"#define EF_HAIR_FACE_SHADOW_PASS {Bool(faceShadowReceiverAvailable)}");
         lines.Add($"#define EF_HAIR_RD_KK_RS_COMPOSITE_DEBUG {Bool(hasAssetComposite)}");
         lines.Add("#define EF_HAIR_RD_TOP_LIGHT_DEBUG 1");
         lines.Add($"#define EF_HAIR_RD_DARK_LINE_DEBUG {Bool(hasAssetComposite)}");
@@ -451,7 +474,79 @@ public sealed class PackageGenerator
         lines.Add("#define EF_HAIR_ANISO_CUT_OFFSET 0.25");
         lines.Add("#define EF_HAIR_TOP_LIGHT_OFFSET 0.0");
         lines.Add($"#define EF_HAIR_HIGHLIGHT_INTENSITY {F(p.HighlightStrength)}");
-        lines.Add($"#define EF_HAIR_SPEC_OFF {Bool(!p.UseHighlight)}");
+        // UseHighlight only describes the optional authored UV1 highlight
+        // layer. It must not disable the main KK/GGX hair specular response.
+        lines.Add("#define EF_HAIR_SPEC_OFF 0");
+    }
+
+    private static void AddIrisProductionMacros(ICollection<string> lines, bool eyeThroughEnabled)
+    {
+        lines.Add("#define EF_FACIAL_COLOR_GAIN 1.06");
+        lines.Add("#define EF_FACIAL_COLOR_SATURATION 0.94");
+        lines.Add("#define EF_FACIAL_COLOR_CONTRAST 1.02");
+        lines.Add("#define EF_FACIAL_COLOR_LIFT float3(0.008, 0.006, 0.004)");
+        lines.Add("#define EF_FACIAL_SOFT_EXPOSURE 3.0");
+        lines.Add("#define EF_FACIAL_ALPHA_CUTOFF 0.01");
+        lines.Add("#define EF_EYE_IRIS_PARALLAX_DEPTH 0.020");
+        lines.Add("#define EF_EYE_IRIS_PARALLAX_SCALE_X 1.0");
+        lines.Add("#define EF_EYE_IRIS_PARALLAX_SCALE_Y 0.25");
+        lines.Add("#define EF_EYE_IRIS_PARALLAX_MASK_INNER 0.22");
+        lines.Add("#define EF_EYE_IRIS_PARALLAX_MASK_OUTER 0.50");
+        lines.Add("#define EF_EYE_IRIS_PARALLAX_MAX_OFFSET 0.035");
+        if (eyeThroughEnabled)
+        {
+            lines.Add("#define EF_FACIAL_BASE_STENCIL_ENABLED 1");
+            lines.Add("#define EF_FACIAL_BASE_STENCIL_REF 1");
+            lines.Add("#define EF_FACIAL_BASE_STENCIL_WRITE_MASK 1");
+        }
+    }
+
+    private static void AddEyeWhiteProductionMacros(ICollection<string> lines, bool eyeThroughEnabled)
+    {
+        lines.Add("#define EF_EYE_WHITE_COLOR_GAIN 1.02");
+        lines.Add("#define EF_EYE_WHITE_COLOR_SATURATION 0.88");
+        lines.Add("#define EF_EYE_WHITE_COLOR_CONTRAST 0.96");
+        lines.Add("#define EF_EYE_WHITE_COLOR_LIFT float3(0.004, 0.003, 0.002)");
+        lines.Add("#define EF_EYE_WHITE_DARK_VALUE 0.86");
+        lines.Add("#define EF_EYE_WHITE_LIGHT_VALUE 1.03");
+        lines.Add("#define EF_EYE_WHITE_LIGHT_CURVE 0.72");
+        lines.Add("#define EF_EYE_WHITE_LIGHT_TINT 0.12");
+        lines.Add("#define EF_EYE_WHITE_SOFT_EXPOSURE 3.0");
+        lines.Add("#define EF_FACIAL_ALPHA_CUTOFF 0.01");
+        if (eyeThroughEnabled)
+        {
+            lines.Add("#define EF_FACIAL_BASE_STENCIL_ENABLED 1");
+            lines.Add("#define EF_FACIAL_BASE_STENCIL_REF 1");
+            lines.Add("#define EF_FACIAL_BASE_STENCIL_WRITE_MASK 1");
+        }
+    }
+
+    private static void AddEyeHighlightProductionMacros(ICollection<string> lines)
+    {
+        lines.Add("#define EF_EYE_HL_COLOR_GAIN 1.0");
+        lines.Add("#define EF_EYE_HL_SATURATION 1.0");
+        lines.Add("#define EF_EYE_HL_EMISSION 1.4");
+        lines.Add("#define EF_EYE_HL_ALPHA_OFFSET 0.70");
+        lines.Add("#define EF_EYE_HL_ALPHA_SCALE 1.0");
+        lines.Add("#define EF_EYE_HL_ALPHA_CUTOFF 0.001");
+    }
+
+    private static void AddOverlayProductionMacros(ICollection<string> lines)
+    {
+        // Overlay geometry is a stencil/depth carrier for EyeThrough. Its
+        // visible color is supplied by the capture composite, so the direct
+        // material pass must remain transparent.
+        lines.Add("#define EF_FACIAL_OVERLAY_ALPHA 0.0");
+        lines.Add("#define EF_FACIAL_OVERLAY_COLOR_GAIN 1.0");
+        lines.Add("#define EF_FACIAL_OVERLAY_SIDE_FADE_END 0.18");
+        lines.Add("#define EF_FACIAL_OVERLAY_SIDE_FADE_START 0.55");
+        lines.Add("#define EF_FACIAL_OVERLAY_STENCIL_ENABLED 1");
+        lines.Add("#define EF_FACIAL_OVERLAY_ZFUNC ALWAYS");
+        lines.Add("#define EF_FACIAL_OVERLAY_DEPTH_FADE_ENABLED 0");
+        lines.Add("#define EF_FACIAL_OVERLAY_DEPTH_FADE_START 0.05");
+        lines.Add("#define EF_FACIAL_OVERLAY_DEPTH_FADE_END 3.0");
+        lines.Add("#define EF_FACIAL_OVERLAY_DEPTH_BIAS 0.02");
+        lines.Add("#define EF_FACIAL_ALPHA_CUTOFF 0.01");
     }
 
     private static void AddSkinProductionMacros(ICollection<string> lines, ShaderParameters p)
@@ -637,6 +732,28 @@ public sealed class PackageGenerator
             return string.IsNullOrWhiteSpace(result) ? "2147483647" : result;
         }
 
+        var shiftedFaceProxyIndices = project.Profiles
+            .Where(profile => profile.Domain == ShaderDomain.FaceParts)
+            .SelectMany(ProjectService.GetBindings)
+            .Where(binding => IsEyeThroughShiftedProxy(binding.MaterialName))
+            .Select(binding => binding.MaterialIndex.ToString(CultureInfo.InvariantCulture))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        // Only the face-parts proxy layer belongs in the eye-through ignore
+        // list. Mouth materials are ordinary geometry and must remain in the
+        // normal depth/shadow chain; otherwise a generated package can lose
+        // non-face shadows or let unrelated geometry leak through the eye.
+        var ignoredSubsets = Subsets(byDomain, ShaderDomain.FaceParts)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Where(value => !shiftedFaceProxyIndices.Contains(value, StringComparer.Ordinal));
+        var shiftedSubsets = Subsets(byDomain, ShaderDomain.EyeOverlay, ShaderDomain.BrowOverlay)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Concat(shiftedFaceProxyIndices)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => int.TryParse(value, out var index) ? index : int.MaxValue)
+            .ToArray();
+
         var lines = new List<string>
         {
             "// Generated generic Endfield EyeThrough capture.",
@@ -646,9 +763,9 @@ public sealed class PackageGenerator
             $"#define EF_EYE_CAPTURE_HIGHLIGHT_SUBSETS {Quote(Subsets(byDomain, ShaderDomain.EyeHighlight))}",
             $"#define EF_EYE_CAPTURE_SCLERA_SUBSETS {Quote(Subsets(byDomain, ShaderDomain.EyeWhite))}",
             $"#define EF_EYE_CAPTURE_BROW_SUBSETS {Quote(Subsets(byDomain, ShaderDomain.BrowLash))}",
-            $"#define EF_EYE_CAPTURE_IGNORED_SUBSETS {Quote(Subsets(byDomain, ShaderDomain.FaceParts, ShaderDomain.Mouth))}",
+            $"#define EF_EYE_CAPTURE_IGNORED_SUBSETS {Quote(string.Join(',', ignoredSubsets))}",
             $"#define EF_EYE_CAPTURE_HAIR_DEPTH_SUBSETS {Quote(Subsets(byDomain, ShaderDomain.Hair, ShaderDomain.HairShadow))}",
-            $"#define EF_EYE_CAPTURE_SHIFTED_SUBSETS {Quote(Subsets(byDomain, ShaderDomain.EyeOverlay, ShaderDomain.BrowOverlay))}"
+            $"#define EF_EYE_CAPTURE_SHIFTED_SUBSETS {Quote(string.Join(',', shiftedSubsets))}"
         };
 
         var iris = project.Profiles.FirstOrDefault(x => x.Domain == ShaderDomain.Iris);
@@ -659,6 +776,17 @@ public sealed class PackageGenerator
         lines.Add(string.Empty);
         lines.Add("#include \"internal/endfield_eye_through_capture_core.fxsub\"");
         return string.Join(Environment.NewLine, lines) + Environment.NewLine;
+    }
+
+    private static bool IsEyeThroughShiftedProxy(string materialName)
+    {
+        var value = materialName.Trim().ToLowerInvariant();
+        return value.Contains("表情", StringComparison.Ordinal)
+            || value.Contains("发影", StringComparison.Ordinal)
+            || value.Contains("髪影", StringComparison.Ordinal)
+            || value.Contains("hairshadow", StringComparison.Ordinal)
+            || value.Contains("hair shadow", StringComparison.Ordinal)
+            || value.Contains("shadow proxy", StringComparison.Ordinal);
     }
 
     private static string Quote(string value)

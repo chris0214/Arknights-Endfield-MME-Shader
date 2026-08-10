@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="EndfieldMaterialStudio.App/EndfieldMaterialStudio.App.csproj" />
+  <Project Path="EndfieldMaterialStudio.Core/EndfieldMaterialStudio.Core.csproj" />
+  <Project Path="EndfieldMaterialStudio.Tests/EndfieldMaterialStudio.Tests.csproj" />
+</Solution>

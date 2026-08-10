@@ -40,14 +40,22 @@
 #define EF_EYE_IRIS_ALPHA_HIGHLIGHT_BRIGHTNESS 3.0
 #endif
 #ifndef EF_EYE_IRIS_MATCAP05_ENABLED
-#define EF_EYE_IRIS_MATCAP05_ENABLED 0
+#define EF_EYE_IRIS_MATCAP05_ENABLED 1
+#endif
+#ifndef EF_EYE_IRIS_MATCAP05_TEXTURE
+#define EF_EYE_IRIS_MATCAP05_TEXTURE \
+    "textures/chen/T_actor_common_matcap_05_D.png"
 #endif
 #ifndef EF_EYE_IRIS_MATCAP05_STRENGTH
 // Goo's Add-color Mix node uses 0.5666667 as the factor for D * MatCap 05.
 #define EF_EYE_IRIS_MATCAP05_STRENGTH 0.5666667
 #endif
 #ifndef EF_EYE_IRIS_MATCAP07_ENABLED
-#define EF_EYE_IRIS_MATCAP07_ENABLED 0
+#define EF_EYE_IRIS_MATCAP07_ENABLED 1
+#endif
+#ifndef EF_EYE_IRIS_MATCAP07_TEXTURE
+#define EF_EYE_IRIS_MATCAP07_TEXTURE \
+    "textures/chen/T_actor_common_matcap_07_D.png"
 #endif
 #ifndef EF_EYE_IRIS_MATCAP07_EMISSION
 // Goo uses 0.7 before its own output chain. The MMD iris subsequently passes

@@ -1,0 +1,14 @@
+// Chen Qianyu CP932 bindings shared by the production face entry.
+#ifndef CHEN_QIANYU_FACE_BINDING_INCLUDED
+#define CHEN_QIANYU_FACE_BINDING_INCLUDED
+
+float4x4 EfFaceHeadBone : CONTROLOBJECT <
+    string name = "(self)";
+    string item = "“ª";
+>;
+
+float3 EfFaceMmdLightDirection : DIRECTION <
+    string Object = "Light";
+>;
+
+#endif

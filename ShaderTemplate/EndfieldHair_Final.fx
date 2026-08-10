@@ -1,5 +1,4 @@
-// Generic Endfield hair release wrapper. Generated profile entries provide
-// model-specific texture resources before including this file.
+// Endfield hair release wrapper for Chen Qianyu.
 // Diffuse/highlight stay in one linear main pass; the screen-space depth rim
 // uses a separate additive pass to remain within DirectX 9 ps_3_0 limits.
 #define EF_HAIR_RD_GOO_RIM_COMPOSITE_DEBUG 0
@@ -45,6 +44,14 @@
 #define EF_SHADOW_VIEWPORT_MAP ZMDshadow_ViewportMap2
 #define EF_SHADOW_CONTROLLER_NAME "ZMDshadow.x"
 #define EF_HAIR_P_MATCH_BLEND_SRGB 1
+
+#define EF_MAIN_TEXTURE_RESOURCE "textures/chen/T_actor_chen_hair_01_D.png"
+#define EF_NORMAL_TEXTURE "textures/chen/T_actor_chen_hair_01_HN.png"
+#define EF_ORM_TEXTURE "textures/chen/T_actor_chen_hair_01_P.png"
+#define EF_RAMP_TEXTURE "textures/chen/T_actor_common_hair_01_RD.png"
+#define EF_HAIR_ANISO_NOISE_TEXTURE "textures/chen/T_actor_common_hairst_01_ST.png"
+#define EF_HAIR_LINE_TEXTURE "textures/chen/T_actor_common_hairline_03_M.png"
+#define EF_HAIR_SPEC_TEXTURE "textures/chen/T_actor_common_hair_08_RS.png"
 
 #define EF_BASE_COLOR float3(0.98588085, 0.98588085, 0.98588085)
 #define EF_BASE_COLOR_POW 1.0

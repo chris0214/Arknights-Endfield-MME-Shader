@@ -7,6 +7,10 @@
 // The authored Eye HL geometry samples the lower-left highlight island from
 // the iris D texture. It is a separate emissive alpha layer, not the dynamic
 // cornea MatCap used by the main iris material.
+#ifndef EF_EYE_HL_TEXTURE_RESOURCE
+#define EF_EYE_HL_TEXTURE_RESOURCE \
+    "textures/chen/T_actor_chen_iris_01_D.png"
+#endif
 #ifndef EF_EYE_HL_COLOR_GAIN
 #define EF_EYE_HL_COLOR_GAIN 1.05
 #endif
@@ -18,7 +22,7 @@
 #define EF_EYE_HL_EMISSION 1.4
 #endif
 #ifndef EF_EYE_HL_ALPHA_OFFSET
-// Matches the validated Goo-style eye alpha highlight response.
+// Matches Chen Qianyu's primary Goo Eye Alpha material.
 #define EF_EYE_HL_ALPHA_OFFSET 0.70
 #endif
 #ifndef EF_EYE_HL_EYES_MASK
@@ -51,15 +55,9 @@ float4x4 EfEyeHlWorld : WORLD;
 float3 EfEyeHlCameraPosition : POSITION < string Object = "Camera"; >;
 float4 EfEyeHlMaterialDiffuse : DIFFUSE < string Object = "Geometry"; >;
 
-#ifdef EF_EYE_HL_TEXTURE_RESOURCE
 texture2D EfEyeHlTexture <
     string ResourceName = EF_EYE_HL_TEXTURE_RESOURCE;
 >;
-#else
-texture2D EfEyeHlTexture : MATERIALTEXTURE <
-    string Format = "A8R8G8B8";
->;
-#endif
 sampler2D EfEyeHlSampler = sampler_state {
     texture = <EfEyeHlTexture>;
     MinFilter = ANISOTROPIC;

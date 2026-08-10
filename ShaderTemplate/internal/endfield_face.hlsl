@@ -4,6 +4,9 @@
 // Face shading core. The optional stencil state only marks visible face pixels;
 // the hair material remains responsible for drawing its projected fringe shadow.
 
+#ifndef EF_FACE_MAIN_TEXTURE_RESOURCE
+#define EF_FACE_MAIN_TEXTURE_RESOURCE "textures/chen/T_actor_chen_face_01_D.png"
+#endif
 #ifndef EF_FACE_BASE_COLOR
 #define EF_FACE_BASE_COLOR float3(1.0, 1.0, 1.0)
 #endif
@@ -57,6 +60,10 @@
 #endif
 #ifndef EF_FACE_SHADOW_RECEIVER_ST_ENABLED
 #define EF_FACE_SHADOW_RECEIVER_ST_ENABLED 0
+#endif
+#ifndef EF_FACE_SHADOW_RECEIVER_ST_TEXTURE_RESOURCE
+#define EF_FACE_SHADOW_RECEIVER_ST_TEXTURE_RESOURCE \
+    "textures/chen/T_actor_common_female_face_01_ST.png"
 #endif
 #ifndef EF_FACE_SHADOW_RECEIVER_ST_THRESHOLD
 #define EF_FACE_SHADOW_RECEIVER_ST_THRESHOLD 0.05
@@ -170,7 +177,7 @@
 #define EF_FACE_SSS_AREA 0.5
 #endif
 #ifndef EF_FACE_SSS_COLOR
-// Goo-style "Front R Color", stored as a scene-linear color.
+// Goo Chen Qianyu "Front R Color", stored as a scene-linear color.
 #define EF_FACE_SSS_COLOR float3(0.822936177, 0.669170380, 0.648408771)
 #endif
 #ifndef EF_FACE_LIP_SPECULAR_ENABLED
@@ -178,6 +185,9 @@
 #endif
 #ifndef EF_FACE_LIP_SPECULAR_MASK_DEBUG
 #define EF_FACE_LIP_SPECULAR_MASK_DEBUG 0
+#endif
+#ifndef EF_FACE_LIP_SPECULAR_TEXTURE_RESOURCE
+#define EF_FACE_LIP_SPECULAR_TEXTURE_RESOURCE "textures/chen/T_actor_common_face_01_hl_M.png"
 #endif
 #ifndef EF_FACE_LIP_SPECULAR_UV_OFFSET
 // Zhihu reference: dot(viewDirWS, faceRightDir) * 0.05.
@@ -268,7 +278,6 @@
 #include "internal/endfield_outline.hlsl"
 #endif
 #include "internal/endfield_global_controls.inc"
-#include "internal/endfield_global_shadow_scale.hlsl"
 #if EF_FACE_RIM_ENABLED
 #include "internal/endfield_specular.hlsl"
 #endif
@@ -351,7 +360,6 @@ sampler2D EfFaceSkinLutSampler = sampler_state {
 #endif
 
 #if EF_FACE_LIP_SPECULAR_ENABLED
-#ifdef EF_FACE_LIP_SPECULAR_TEXTURE_RESOURCE
 texture2D EfFaceLipSpecularTexture <
     string ResourceName = EF_FACE_LIP_SPECULAR_TEXTURE_RESOURCE;
 >;
@@ -360,7 +368,6 @@ sampler2D EfFaceLipSpecularSampler = sampler_state {
     MinFilter = LINEAR; MagFilter = LINEAR; MipFilter = LINEAR;
     AddressU = CLAMP; AddressV = CLAMP;
 };
-#endif
 #endif
 
 // MME semantic globals used by the opaque object/object_ss variants.
@@ -375,15 +382,9 @@ float3 CameraPosition : POSITION < string Object = "Camera"; >;
 float3 EfFaceMmdLightColor : SPECULAR < string Object = "Light"; >;
 #endif
 
-#ifdef EF_FACE_MAIN_TEXTURE_RESOURCE
 texture2D EfFaceMainTexture <
     string ResourceName = EF_FACE_MAIN_TEXTURE_RESOURCE;
 >;
-#else
-texture2D EfFaceMainTexture : MATERIALTEXTURE <
-    string Format = "A8R8G8B8";
->;
-#endif
 sampler2D EfFaceMainSampler = sampler_state {
     texture = <EfFaceMainTexture>;
     MinFilter = ANISOTROPIC; MagFilter = ANISOTROPIC; MipFilter = ANISOTROPIC;
@@ -733,7 +734,7 @@ float4 EfFacePS(EfFaceVaryings input, uniform bool useTexture) : COLOR0
         backChannelBlend));
     return float4(sdfShadow.xxx, 1.0);
 #else
-// Goo-style contract: one continuous angular threshold over the
+    // Goo Chen Qianyu contract: one continuous angular threshold over the
     // full light orbit, with the two authored SDF channels averaged together.
     // Keep the longitudinal sign explicit: Goo and MMD expose opposite light
     // vector contracts, so the correct host convention must be probed directly.
@@ -806,7 +807,7 @@ float4 EfFacePS(EfFaceVaryings input, uniform bool useTexture) : COLOR0
     diffuseBlend = EfFaceLinearToSrgb(max(diffuseLinear * faceAo, 0.0));
 #endif
 #if EF_FACE_FINAL_BRIGHTNESS_DEBUG
-// Goo-style Face Final brightness is applied to scene-linear
+    // Goo Chen Qianyu's Face Final brightness is applied to scene-linear
     // diffuse after the complete authored color/AO chain.
     float3 finalDiffuseLinear = EfFaceSrgbToLinear(saturate(diffuseBlend));
     finalDiffuseLinear *= max(EF_FACE_FINAL_BRIGHTNESS, 0.0);
@@ -833,11 +834,8 @@ float4 EfFacePS(EfFaceVaryings input, uniform bool useTexture) : COLOR0
     float lipSpaceOffset = dot(lipViewDirWS, headRight)
         * lipUvOffset;
     float2 lipSpecularUv = float2(input.uv.x + lipSpaceOffset, input.uv.y);
-    float lipSpecularMask = 0.0;
-#ifdef EF_FACE_LIP_SPECULAR_TEXTURE_RESOURCE
-    lipSpecularMask = tex2D(EfFaceLipSpecularSampler,
+    float lipSpecularMask = tex2D(EfFaceLipSpecularSampler,
         lipSpecularUv).r;
-#endif
     float lipSdfDot = dot(projectedLight, headFront);
     float lipLightFade = EfFaceControllerLipLightFade(
         EF_FACE_LIP_SPECULAR_LIGHT_FADE);
@@ -857,7 +855,7 @@ float4 EfFacePS(EfFaceVaryings input, uniform bool useTexture) : COLOR0
 #if EF_FACE_RIM_ENABLED
     // Zhihu face rim: cm_M.a supplies the authored region, the light side
     // selects one UV half, and head-facing NoV fades the painted rim at profile.
-// The validated MMD face UV/right-axis pairing is mirrored relative to the
+    // Chen Qianyu's MMD face UV/right-axis pairing is mirrored relative to the
     // article asset, so use the verified SDF mirror direction for the lit half.
     float faceHalfMask = step(input.uv.x, 0.5);
     float litHalfFlag = step(0.0, side);
@@ -896,7 +894,7 @@ float4 EfFacePS(EfFaceVaryings input, uniform bool useTexture) : COLOR0
 #endif
     float3 globalFaceLinear = EfFaceSrgbToLinear(
         saturate(diffuseBlend));
-    globalFaceLinear = EfApplyGlobalMaterialGradeScaled(
+    globalFaceLinear = EfApplyGlobalMaterialGrade(
         globalFaceLinear,
         diffuseWeight);
     return float4(

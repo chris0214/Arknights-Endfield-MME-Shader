@@ -91,7 +91,7 @@
 #define EF_BASE_COLOR float3(1.0, 1.0, 1.0)
 #endif
 #ifndef EF_BASE_COLOR_POW
-// The reference hair albedo is mid-grey (~0.31 gamma). >1 contrast in linear space
+// The 陈千语 hair albedo is mid-grey (~0.31 gamma). >1 contrast in linear space
 // seats it toward the reference near-black without crushing detail.
 #define EF_BASE_COLOR_POW 1.3
 #endif
@@ -105,8 +105,7 @@
 #define EF_DIFFUSE_BLEND_EFFECT 0.6
 #endif
 #ifndef EF_FACE_CENTER
-// A character-specific face center may be supplied by a generated wrapper;
-// this fallback keeps the validated neutral coordinate for generic entries.
+// 陈千语.pmx head bone '頭' = (0, 18.38, 0.04); crown Head_Bone02 = (0, 18.70, 0.04).
 // The sphere normal (posWS - center) is a SMOOTH position-based normal that
 // stays continuous across separate hair cards — the tutorial's own trick for
 // the neat aligned highlight. Retune per model if hair sits elsewhere.
@@ -343,7 +342,7 @@
 #ifndef EF_HAIR_RS_GAIN
 #define EF_HAIR_RS_GAIN 7.0
 #endif
-// Goo-style color-layer probe. The reference blend uses two linear
+// Goo Chen Qianyu color-layer probe. The reference blend uses two linear
 // highlight colors selected by a one-sided sqrt(-T.H) smoothstep. The diffuse
 // hair beneath the masked band remains the third visible color layer.
 #ifndef EF_HAIR_KK_GOO_AB_COLOR_DEBUG
@@ -672,11 +671,6 @@
 #ifndef EF_GOO_RIM_COLOR
 #define EF_GOO_RIM_COLOR float3(1.0, 1.0, 1.0)
 #endif
-#ifndef EF_HAIR_RIM_EDGE_COLOR_MIN
-// PMX hair materials commonly leave EDGECOLOR at exact black. Treat only
-// near-black values as "unset" so dark intentional edge colors still work.
-#define EF_HAIR_RIM_EDGE_COLOR_MIN 0.004
-#endif
 #ifndef EF_GOO_RIM_COLOR_STRENGTH
 #define EF_GOO_RIM_COLOR_STRENGTH 2.0
 #endif
@@ -835,9 +829,28 @@
 #define EF_ALPHA_CUTOFF 0.5
 #endif
 
-// Character texture resources are supplied by the generated wrapper. The
-// base color falls back to MMD's material texture; optional maps are disabled
-// by the generator when the current model does not provide them.
+// Resource names (per-character; overridable per wrapper)
+#ifndef EF_MAIN_TEXTURE
+#define EF_MAIN_TEXTURE "textures/chen/T_actor_chen_hair_01_D.png"
+#endif
+#ifndef EF_ORM_TEXTURE
+#define EF_ORM_TEXTURE "textures/chen/T_actor_chen_hair_01_P.png"
+#endif
+#ifndef EF_NORMAL_TEXTURE
+#define EF_NORMAL_TEXTURE "textures/chen/T_actor_chen_hair_01_HN.png"
+#endif
+#ifndef EF_RAMP_TEXTURE
+#define EF_RAMP_TEXTURE "textures/chen/T_actor_common_hair_01_RD.png"
+#endif
+#ifndef EF_HAIR_SPEC_TEXTURE
+#define EF_HAIR_SPEC_TEXTURE "textures/chen/T_actor_common_hair_08_RS.png"
+#endif
+#ifndef EF_HAIR_ANISO_NOISE_TEXTURE
+#define EF_HAIR_ANISO_NOISE_TEXTURE "textures/chen/T_actor_common_hairst_01_ST.png"
+#endif
+#ifndef EF_HAIR_LINE_TEXTURE
+#define EF_HAIR_LINE_TEXTURE "textures/chen/T_actor_common_hairline_03_M.png"
+#endif
 
 // ── MME semantic globals ────────────────────────────────
 float4x4 matWorldViewProject : WORLDVIEWPROJECTION;
@@ -859,7 +872,6 @@ float4 EfHairMaterialEdgeColor : EDGECOLOR;
 #include "internal/endfield_outline.hlsl"
 #endif
 #include "internal/endfield_controls.inc"
-#include "internal/endfield_global_shadow_scale.hlsl"
 #if EF_HAIR_CONTROLLER_ENABLED
 #include "internal/endfield_hair_controls.inc"
 #endif
@@ -902,33 +914,21 @@ sampler2D EfNormalSampler = sampler_state {
 };
 #endif
 
-#ifdef EF_RAMP_TEXTURE
 texture2D EfRampTexture < string ResourceName = EF_RAMP_TEXTURE; >;
-#else
-texture2D EfRampTexture : MATERIALTEXTURE < string Format = "A8R8G8B8"; >;
-#endif
 sampler2D EfRampSampler = sampler_state {
     texture = <EfRampTexture>;
     MinFilter = LINEAR; MagFilter = LINEAR; MipFilter = NONE;
     AddressU = CLAMP; AddressV = CLAMP;
 };
 
-#ifdef EF_HAIR_SPEC_TEXTURE
 texture2D EfHairSpecTexture < string ResourceName = EF_HAIR_SPEC_TEXTURE; >;
-#else
-texture2D EfHairSpecTexture : MATERIALTEXTURE < string Format = "A8R8G8B8"; >;
-#endif
 sampler2D EfHairSpecSampler = sampler_state {
     texture = <EfHairSpecTexture>;
     MinFilter = LINEAR; MagFilter = LINEAR; MipFilter = NONE;
     AddressU = CLAMP; AddressV = CLAMP;
 };
 
-#ifdef EF_HAIR_ANISO_NOISE_TEXTURE
 texture2D EfHairAnisoNoiseTexture < string ResourceName = EF_HAIR_ANISO_NOISE_TEXTURE; >;
-#else
-texture2D EfHairAnisoNoiseTexture : MATERIALTEXTURE < string Format = "A8R8G8B8"; >;
-#endif
 sampler2D EfHairAnisoNoiseSampler = sampler_state {
     texture = <EfHairAnisoNoiseTexture>;
     MinFilter = LINEAR; MagFilter = LINEAR; MipFilter = LINEAR;
@@ -937,11 +937,7 @@ sampler2D EfHairAnisoNoiseSampler = sampler_state {
 
 #if EF_HAIR_KK_HAIRLINE_MASK_DEBUG || EF_HAIR_RD_KK_RS_COMPOSITE_DEBUG \
     || EF_HAIR_RD_DARK_LINE_DEBUG
-#ifdef EF_HAIR_LINE_TEXTURE
 texture2D EfHairLineTexture < string ResourceName = EF_HAIR_LINE_TEXTURE; >;
-#else
-texture2D EfHairLineTexture : MATERIALTEXTURE < string Format = "A8R8G8B8"; >;
-#endif
 sampler2D EfHairLineSampler = sampler_state {
     texture = <EfHairLineTexture>;
     MinFilter = LINEAR; MagFilter = LINEAR; MipFilter = LINEAR;
@@ -973,7 +969,7 @@ float EfSigmoidSharp(float x, float center, float smoothness)
     return 1.0 / (1.0 + exp(-t));
 }
 
-// Exact SigmoidSharp node group used by the validated Goo-style hair preset.
+// Exact SigmoidSharp node group used by the Goo Chen Qianyu hair preset.
 float EfGooSigmoidSharp(float x, float center, float sharp)
 {
     float exponent = -3.0 * sharp * (x - center);
@@ -1268,7 +1264,7 @@ float3 EfAssetKkRsHighlightLinear(EfVaryings input
         specularRange, maskSpecularRange, hairLayerMask);
 #endif
 #if EF_HAIR_KK_GOO_LENGTH_FRONT_DEBUG
-    // The Goo-style preset uses a reversed Smoothstep with min=0.085, max=0
+    // Chen's Goo preset uses a reversed Smoothstep with min=0.085, max=0
     // around abs(dot). Apply that width function only to P.r=0 outer/front
     // hair; the accepted P.r=1 rear/inner branch keeps the existing mask.
     float gooLengthBand = EfGooReverseSmoothstep(
@@ -2134,7 +2130,7 @@ float4 EfMainPS(EfVaryings input, float facing : VFACE,
     float3 diffLow  = lerp(diffDark * 0.65, diffLight, aoShaNoF);
     diffRamp = lerp(diffLow, diffRamp, dayStrength);
     // Bright/Dark controller lift on the composed diffuse.
-    diffRamp *= lerp(EfDarkBranchMul(), EfBrightMul(), rampNoL);
+    diffRamp *= lerp(EfDarkMul(), EfBrightMul(), rampNoL);
     float3 diffResult = lightFinal * diffRamp;
 
     // Kajiya-Kay LUT specular.
@@ -2200,7 +2196,7 @@ float4 EfMainPS(EfVaryings input, float facing : VFACE,
 #else
     float4 gooP = ormTex;
 #if EF_GOO_MATCH_BLEND_P_SRGB
-    // The source hair property texture marks P as sRGB in the reference blend,
+    // M_actor_chen_hair_01.001 actually marks P as sRGB in the reference blend,
     // despite the node-group socket being labelled Non-Color.
     gooP.rgb = EfSRGBToLinear(gooP.rgb);
 #endif
@@ -2351,15 +2347,8 @@ float4 EfHairRimPS(EfHairRimVaryings input, float facing : VFACE) : COLOR0
 #if EF_HAIR_CONTROLLER_ENABLED
     rimMultiplier = EfHairControllerRimMultiplier();
 #endif
-    float3 materialRimSrgb = saturate(EfHairMaterialEdgeColor.rgb);
-    float materialRimPeak = max(
-        materialRimSrgb.r, max(materialRimSrgb.g, materialRimSrgb.b));
-    float useMaterialRimColor = step(
-        EF_HAIR_RIM_EDGE_COLOR_MIN, materialRimPeak);
-    float3 rimColor = lerp(
-        EF_GOO_RIM_COLOR,
-        EfSRGBToLinear(materialRimSrgb),
-        useMaterialRimColor);
+    float3 rimColor = EfSRGBToLinear(
+        saturate(EfHairMaterialEdgeColor.rgb));
 #if EF_HAIR_CONTROLLER_C5_ENABLED
     rimColor = EfHairControllerRimColor(rimColor, EF_GOO_RIM_COLOR);
 #endif
@@ -2460,7 +2449,7 @@ float4 EfHairFaceShadowPS(EfHairFaceShadowVaryings input,
         EF_HAIR_FACE_SHADOW_OPACITY * MaterialDiffuse.a * coverage
             * shadowStrength);
     return float4(
-        saturate(shadowColor * shadowBrightness * EfDarkBranchMul()),
+        saturate(shadowColor * shadowBrightness * EfDarkMul()),
         opacity);
 }
 #endif

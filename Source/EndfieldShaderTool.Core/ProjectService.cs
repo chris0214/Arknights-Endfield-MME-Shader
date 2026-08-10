@@ -234,8 +234,11 @@ public static class MaterialDefaults
             Domain = domain,
             Parameters = CreateParameters(domain)
         };
-        profile.Parameters.UseMatcap05 = domain == ShaderDomain.Iris;
-        profile.Parameters.UseMatcap07 = domain == ShaderDomain.Iris;
+        // Iris MatCap is an optional diagnostic/finish layer. Keep it off in
+        // newly imported projects so the iris does not become over-bright;
+        // users can still enable it explicitly in the material controller.
+        profile.Parameters.UseMatcap05 = false;
+        profile.Parameters.UseMatcap07 = false;
         // EyeThrough is model-specific (subset order, head bone, and often a
         // derived PMX). Do not silently enable it for every imported model.
         profile.Parameters.EnableEyeThrough = false;

@@ -5,6 +5,10 @@
 // their own duplicated geometry as the eye-domain test, then read only the
 // opaque-hair stencil bit to identify pixels covered by the real fringe.
 
+#ifndef EF_FACIAL_MAIN_TEXTURE_RESOURCE
+#define EF_FACIAL_MAIN_TEXTURE_RESOURCE \
+    "textures/chen/T_actor_chen_face_01_D.png"
+#endif
 #ifndef EF_FACIAL_BASE_COLOR
 #define EF_FACIAL_BASE_COLOR float3(1.0, 1.0, 1.0)
 #endif
@@ -130,15 +134,9 @@ float3 EfFacialIrisNeutralViewDirection()
 // CP932 bytes for the standard MMD head bone name are injected by each public
 // wrapper. Keeping the declaration there avoids putting non-ASCII in core code.
 
-#ifdef EF_FACIAL_MAIN_TEXTURE_RESOURCE
 texture2D EfFacialMainTexture <
     string ResourceName = EF_FACIAL_MAIN_TEXTURE_RESOURCE;
 >;
-#else
-texture2D EfFacialMainTexture : MATERIALTEXTURE <
-    string Format = "A8R8G8B8";
->;
-#endif
 sampler2D EfFacialMainSampler = sampler_state {
     texture = <EfFacialMainTexture>;
     MinFilter = ANISOTROPIC;

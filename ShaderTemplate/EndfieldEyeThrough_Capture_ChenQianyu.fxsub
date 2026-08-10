@@ -1,0 +1,446 @@
+// Chen Qianyu feature capture used by EndfieldEyeThrough.fx.
+// PMX subset indices are zero-based.
+#define EF_EYE_CAPTURE_EYE_SUBSETS "1"
+#define EF_EYE_CAPTURE_HIGHLIGHT_SUBSETS "2"
+#define EF_EYE_CAPTURE_SCLERA_SUBSETS "3"
+#define EF_EYE_CAPTURE_BROW_SUBSETS "5"
+#define EF_EYE_CAPTURE_IGNORED_SUBSETS "4"
+// Hair and its authored shadow proxy remain main-scene layers. They provide
+// shifted depth only; their RGB must never be copied into the feature RT.
+#define EF_EYE_CAPTURE_HAIR_DEPTH_SUBSETS "7,8"
+#define EF_EYE_CAPTURE_SHIFTED_SUBSETS "11,12,13"
+
+float EfEyeCaptureDepthPush = 3.0;
+// cos(86 degrees): retain a faint side transition until 86 degrees, then
+// remove the capture completely before the camera reaches the back hemisphere.
+float EfEyeCaptureSideFadeZero = 0.069756;
+float EfEyeCaptureSideFadeFull = 0.72;
+float EfEyeCaptureSideFadePower = 0.75;
+float EfEyeCaptureBrowAlpha = 0.55;
+// EyeThrough is a close/mid-shot readability treatment. Once the facial
+// features collapse to only a few pixels, partial-alpha compositing exposes
+// too much of the finished scene underneath. Fade it out before that point.
+float EfEyeCaptureDistanceFadeStart = 26.0;
+float EfEyeCaptureDistanceFadeEnd = 38.0;
+float EfEyeCaptureDistanceFadePower = 1.0;
+
+#define EF_EYE_WHITE_COLOR_GAIN 1.02
+#define EF_EYE_WHITE_COLOR_SATURATION 0.88
+#define EF_EYE_WHITE_COLOR_CONTRAST 0.96
+#define EF_EYE_WHITE_COLOR_LIFT float3(0.004, 0.003, 0.002)
+#define EF_EYE_WHITE_DARK_VALUE 0.86
+#define EF_EYE_WHITE_LIGHT_VALUE 1.03
+#define EF_EYE_WHITE_LIGHT_CURVE 0.72
+#define EF_EYE_WHITE_LIGHT_TINT 0.12
+#define EF_EYE_WHITE_SOFT_EXPOSURE 3.0
+
+// Match the visible iris base exactly before EyeThrough blends it over hair.
+#define EF_EYE_CAPTURE_IRIS_COLOR_GAIN 1.06
+#define EF_EYE_CAPTURE_IRIS_COLOR_SATURATION 0.94
+#define EF_EYE_CAPTURE_IRIS_COLOR_CONTRAST 1.02
+#define EF_EYE_CAPTURE_IRIS_COLOR_LIFT float3(0.008, 0.006, 0.004)
+#define EF_EYE_CAPTURE_IRIS_SOFT_EXPOSURE 3.0
+#define EF_EYE_IRIS_PARALLAX_DEPTH 0.020
+#define EF_EYE_IRIS_PARALLAX_SCALE_X 1.0
+#define EF_EYE_IRIS_PARALLAX_SCALE_Y 0.25
+#define EF_EYE_IRIS_PARALLAX_MASK_INNER 0.22
+#define EF_EYE_IRIS_PARALLAX_MASK_OUTER 0.50
+#define EF_EYE_IRIS_PARALLAX_MAX_OFFSET 0.035
+
+// Match the visible authored Eye HL layer. It is captured separately from the
+// opaque iris so its fixed emissive coverage survives the through-hair composite.
+#define EF_EYE_HL_COLOR_GAIN 1.0
+#define EF_EYE_HL_SATURATION 1.0
+#define EF_EYE_HL_EMISSION 1.4
+#define EF_EYE_HL_ALPHA_OFFSET 0.70
+#define EF_EYE_HL_ALPHA_SCALE 1.0
+#define EF_EYE_HL_ALPHA_CUTOFF 0.001
+
+#include "internal/chen_qianyu_face_binding.cp932"
+#include "internal/endfield_eye.hlsl"
+#include "internal/endfield_eye_white.hlsl"
+#define EF_EYE_HL_NO_TECHNIQUES 1
+#define EfEyeHlHeadBone EfFaceHeadBone
+#include "internal/endfield_eye_highlight.hlsl"
+
+float4x4 EfEyeCaptureWorldViewProjection : WORLDVIEWPROJECTION;
+float4x4 EfEyeCaptureWorld : WORLD;
+float4x4 EfEyeCaptureView : VIEW;
+float4x4 EfEyeCaptureViewProjection : VIEWPROJECTION;
+float3 EfEyeCaptureCameraPosition : POSITION < string Object = "Camera"; >;
+float3 EfEyeCaptureLightDirection : DIRECTION < string Object = "Light"; >;
+float3 EfEyeCaptureLightColor : SPECULAR < string Object = "Light"; >;
+float4 EfEyeCaptureMaterialDiffuse : DIFFUSE < string Object = "Geometry"; >;
+bool use_texture;
+
+texture2D EfEyeCaptureMaterialTexture : MATERIALTEXTURE;
+sampler2D EfEyeCaptureMaterialSampler = sampler_state {
+    texture = <EfEyeCaptureMaterialTexture>;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = LINEAR;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+
+texture2D EfEyeCaptureIrisTexture <
+    string ResourceName = "textures/chen/T_actor_chen_iris_01_D.png";
+>;
+sampler2D EfEyeCaptureIrisSampler = sampler_state {
+    texture = <EfEyeCaptureIrisTexture>;
+    MinFilter = ANISOTROPIC;
+    MagFilter = ANISOTROPIC;
+    MipFilter = ANISOTROPIC;
+    MaxAnisotropy = 16;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+
+struct EfEyeCaptureVaryings {
+    float4 positionCS : POSITION;
+    float2 uv : TEXCOORD0;
+    float facingFade : TEXCOORD1;
+    float3 normalWS : TEXCOORD2;
+    float rawFacing : TEXCOORD3;
+    float3 positionWS : TEXCOORD4;
+    float distanceFade : TEXCOORD5;
+};
+
+float EfEyeCaptureFacing(float3 positionWS)
+{
+    float3 forwardAxis = EfFaceHeadBone._31_32_33;
+    float forwardLengthSq = dot(forwardAxis, forwardAxis);
+    float3 headFront = (forwardLengthSq > 1e-8)
+        ? -forwardAxis * rsqrt(forwardLengthSq)
+        : float3(0.0, 0.0, -1.0);
+
+    float3 toCamera = EfEyeCaptureCameraPosition - positionWS;
+    float toCameraLengthSq = dot(toCamera, toCamera);
+    float3 viewDirection = (toCameraLengthSq > 1e-8)
+        ? toCamera * rsqrt(toCameraLengthSq)
+        : headFront;
+
+    return clamp(dot(headFront, viewDirection), -1.0, 1.0);
+}
+
+float3 EfEyeCaptureHeadFront()
+{
+    float3 forwardAxis = EfFaceHeadBone._31_32_33;
+    float forwardLengthSq = dot(forwardAxis, forwardAxis);
+    return (forwardLengthSq > 1e-8)
+        ? -forwardAxis * rsqrt(forwardLengthSq)
+        : float3(0.0, 0.0, -1.0);
+}
+
+float EfEyeCaptureFacingFade(float facing)
+{
+    facing = saturate(facing);
+    float fade = smoothstep(
+        saturate(EfEyeCaptureSideFadeZero),
+        max(EfEyeCaptureSideFadeFull,
+            EfEyeCaptureSideFadeZero + 1e-4),
+        facing);
+    return pow(saturate(fade), max(EfEyeCaptureSideFadePower, 1e-4));
+}
+
+float EfEyeCaptureDistanceFade(float3 positionWS)
+{
+    float cameraDistance = length(EfEyeCaptureCameraPosition - positionWS);
+    float fadeStart = max(EfEyeCaptureDistanceFadeStart, 0.0);
+    float fadeEnd = max(EfEyeCaptureDistanceFadeEnd, fadeStart + 1e-4);
+    float fade = 1.0 - smoothstep(fadeStart, fadeEnd, cameraDistance);
+    return pow(saturate(fade), max(EfEyeCaptureDistanceFadePower, 1e-4));
+}
+
+EfEyeCaptureVaryings EfEyeCaptureVS(
+    float4 positionOS : POSITION,
+    float3 normalOS : NORMAL,
+    float2 uv : TEXCOORD0)
+{
+    EfEyeCaptureVaryings output;
+    output.positionCS = mul(positionOS, EfEyeCaptureWorldViewProjection);
+    output.uv = uv;
+    float4 positionWS = mul(positionOS, EfEyeCaptureWorld);
+    output.positionWS = positionWS.xyz;
+    output.rawFacing = EfEyeCaptureFacing(positionWS.xyz);
+    output.facingFade = EfEyeCaptureFacingFade(output.rawFacing);
+    output.distanceFade = EfEyeCaptureDistanceFade(positionWS.xyz);
+    output.normalWS = normalize(mul(normalOS, (float3x3)EfEyeCaptureWorld));
+    return output;
+}
+
+EfEyeCaptureVaryings EfEyeCaptureShiftedVS(
+    float4 positionOS : POSITION,
+    float3 normalOS : NORMAL,
+    float2 uv : TEXCOORD0)
+{
+    EfEyeCaptureVaryings output;
+    float4 positionWS = mul(positionOS, EfEyeCaptureWorld);
+    float3 awayFromCamera = positionWS.xyz - EfEyeCaptureCameraPosition;
+    float lengthSq = dot(awayFromCamera, awayFromCamera);
+    awayFromCamera = (lengthSq > 1e-8)
+        ? awayFromCamera * rsqrt(lengthSq)
+        : float3(0.0, 0.0, 1.0);
+    positionWS.xyz += awayFromCamera * max(EfEyeCaptureDepthPush, 0.0);
+    output.positionCS = mul(positionWS, EfEyeCaptureViewProjection);
+    output.uv = uv;
+    output.positionWS = positionWS.xyz;
+    output.facingFade = 0.0;
+    output.distanceFade = 0.0;
+    output.rawFacing = -1.0;
+    output.normalWS = normalize(mul(normalOS, (float3x3)EfEyeCaptureWorld));
+    return output;
+}
+
+EfEyeCaptureVaryings EfEyeCaptureHighlightVS(
+    float4 positionOS : POSITION,
+    float3 normalOS : NORMAL,
+    float2 uv : TEXCOORD0)
+{
+    EfEyeCaptureVaryings output = EfEyeCaptureVS(
+        positionOS, normalOS, uv);
+    output.positionCS.z -= EF_EYE_HL_DEPTH_BIAS
+        * EfEyeHlDepthBiasVisibility(output.rawFacing)
+        * output.positionCS.w;
+    return output;
+}
+
+float4 EfEyeCaptureFeaturePS(
+    EfEyeCaptureVaryings input,
+    uniform float alphaScale,
+    uniform bool gradeIris) : COLOR0
+{
+    float4 color = EfEyeCaptureMaterialDiffuse;
+    float irisAlphaMask = 0.0;
+    float2 sampleUv = input.uv;
+    if (gradeIris) {
+        sampleUv = EfEyeIrisParallaxUv(
+            input.uv,
+            input.positionWS,
+            input.normalWS,
+            EfEyeCaptureCameraPosition,
+            EfEyeCaptureHeadFront());
+    }
+    if (use_texture) {
+        // The PMX iris texture has an opaque replacement alpha. Read the MME
+        // copy for iris RGB+A so both paths share the original D.A emission
+        // mask; non-iris features continue using their PMX material texture.
+        float4 featureTexel = gradeIris
+            ? tex2D(EfEyeCaptureIrisSampler, sampleUv)
+            : tex2D(EfEyeCaptureMaterialSampler, sampleUv);
+        color.rgb *= featureTexel.rgb;
+        irisAlphaMask = featureTexel.a;
+    }
+    if (gradeIris) {
+        float luminance = dot(color.rgb, float3(0.2126, 0.7152, 0.0722));
+        color.rgb = lerp(luminance.xxx, color.rgb,
+            EF_EYE_CAPTURE_IRIS_COLOR_SATURATION);
+        color.rgb = (color.rgb - 0.5)
+            * EF_EYE_CAPTURE_IRIS_COLOR_CONTRAST + 0.5;
+        color.rgb = color.rgb * EF_EYE_CAPTURE_IRIS_COLOR_GAIN
+            + EF_EYE_CAPTURE_IRIS_COLOR_LIFT;
+        color.rgb = saturate(color.rgb);
+        color.rgb = EfEyeIrisApplyMatcap05(
+            color.rgb, input.normalWS, EfEyeCaptureView);
+        color.rgb = EfEyeIrisApplyAlphaEmission(
+            color.rgb, irisAlphaMask);
+        color.rgb = EfEyeIrisApplyMatcap07(
+            color.rgb, sampleUv);
+
+        float3 linearColor = pow(max(color.rgb, 1e-5), 2.2);
+        float exposure = EF_EYE_CAPTURE_IRIS_SOFT_EXPOSURE;
+        linearColor = linearColor * exposure /
+            max(1.0 + linearColor * (exposure - 1.0), 1e-4);
+        color.rgb = pow(saturate(linearColor), 1.0 / 2.2);
+        color.rgb = EfEyeIrisApplyFinalOutput(color.rgb);
+    }
+    color.a *= saturate(input.facingFade)
+        * saturate(input.distanceFade)
+        * saturate(alphaScale);
+    clip(color.a - 1e-4);
+    return saturate(color);
+}
+
+float4 EfEyeCaptureScleraPS(
+    EfEyeCaptureVaryings input) : COLOR0
+{
+    float4 texel = float4(1.0, 1.0, 1.0, 1.0);
+    if (use_texture) {
+        texel = tex2D(EfEyeCaptureMaterialSampler, input.uv);
+    }
+    float alpha = saturate(
+        EfEyeCaptureMaterialDiffuse.a
+        * input.facingFade
+        * input.distanceFade);
+    clip(alpha - 1e-4);
+    float3 color = EfEyeWhiteEvaluate(
+        texel.rgb,
+        EfEyeCaptureMaterialDiffuse.rgb,
+        input.normalWS,
+        EfEyeCaptureLightDirection,
+        EfEyeCaptureLightColor);
+    return float4(color, alpha);
+}
+
+float4 EfEyeCaptureHighlightPS(
+    EfEyeCaptureVaryings input) : COLOR0
+{
+    float3 textureColor = tex2D(
+        EfEyeCaptureMaterialSampler, input.uv).rgb;
+    float alpha = EfEyeHlCoverageValue(
+        input.rawFacing, EfEyeCaptureMaterialDiffuse.a)
+        * saturate(input.facingFade)
+        * saturate(input.distanceFade);
+    clip(alpha - EF_EYE_HL_ALPHA_CUTOFF);
+    return float4(EfEyeHlColor(textureColor), alpha);
+}
+
+float4 EfEyeCaptureMaskPS(EfEyeCaptureVaryings input) : COLOR0
+{
+    return 0.0;
+}
+
+#define EF_EYE_CAPTURE_FEATURE_STATES \
+    ZEnable = true; \
+    ZWriteEnable = true; \
+    ZFunc = LESSEQUAL; \
+    CullMode = NONE; \
+    AlphaTestEnable = false; \
+    AlphaBlendEnable = false;
+
+#define EF_EYE_CAPTURE_MASK_STATES \
+    ZEnable = true; \
+    ZWriteEnable = true; \
+    /* Strict comparison prevents far rear surfaces from becoming equal */ \
+    /* after depth quantization and clearing an already captured feature. */ \
+    ZFunc = LESS; \
+    CullMode = NONE; \
+    AlphaTestEnable = false; \
+    AlphaBlendEnable = false;
+
+#define EF_EYE_CAPTURE_FEATURE_TECHNIQUE(name, passName, subsetValue, alphaValue, gradeIrisValue) \
+    technique name < \
+        string MMDPass = passName; \
+        string Subset = subsetValue; \
+    > { \
+        pass DrawObject { \
+            EF_EYE_CAPTURE_FEATURE_STATES \
+            VertexShader = compile vs_3_0 EfEyeCaptureVS(); \
+            PixelShader = compile ps_3_0 EfEyeCaptureFeaturePS(alphaValue, gradeIrisValue); \
+        } \
+    }
+
+#define EF_EYE_CAPTURE_IGNORE_TECHNIQUE(name, passName) \
+    technique name < \
+        string MMDPass = passName; \
+        string Subset = EF_EYE_CAPTURE_IGNORED_SUBSETS; \
+    > { \
+        pass IgnoreObject { \
+            ZEnable = false; \
+            ZWriteEnable = false; \
+            ZFunc = ALWAYS; \
+            CullMode = NONE; \
+            AlphaTestEnable = false; \
+            AlphaBlendEnable = false; \
+            ColorWriteEnable = 0; \
+            VertexShader = compile vs_3_0 EfEyeCaptureVS(); \
+            PixelShader = compile ps_3_0 EfEyeCaptureMaskPS(); \
+        } \
+    }
+
+#define EF_EYE_CAPTURE_HIGHLIGHT_TECHNIQUE(name, passName) \
+    technique name < \
+        string MMDPass = passName; \
+        string Subset = EF_EYE_CAPTURE_HIGHLIGHT_SUBSETS; \
+    > { \
+        pass DrawObject { \
+            ZEnable = true; \
+            /* Eye HL is captured before sclera and must keep the later */ \
+            /* sclera pass from erasing its eye-white-crossing pixels. */ \
+            ZWriteEnable = true; \
+            ZFunc = LESSEQUAL; \
+            CullMode = NONE; \
+            AlphaTestEnable = false; \
+            AlphaBlendEnable = true; \
+            SrcBlend = SRCALPHA; \
+            DestBlend = INVSRCALPHA; \
+            BlendOp = ADD; \
+            VertexShader = compile vs_3_0 EfEyeCaptureHighlightVS(); \
+            PixelShader = compile ps_3_0 EfEyeCaptureHighlightPS(); \
+        } \
+    }
+
+#define EF_EYE_CAPTURE_SCLERA_TECHNIQUE(name, passName) \
+    technique name < \
+        string MMDPass = passName; \
+        string Subset = EF_EYE_CAPTURE_SCLERA_SUBSETS; \
+    > { \
+        pass DrawObject { \
+            EF_EYE_CAPTURE_FEATURE_STATES \
+            VertexShader = compile vs_3_0 EfEyeCaptureVS(); \
+            PixelShader = compile ps_3_0 EfEyeCaptureScleraPS(); \
+        } \
+    }
+
+#define EF_EYE_CAPTURE_SHIFT_TECHNIQUE(name, passName) \
+    technique name < \
+        string MMDPass = passName; \
+        string Subset = EF_EYE_CAPTURE_SHIFTED_SUBSETS; \
+    > { \
+        pass DrawObject { \
+            EF_EYE_CAPTURE_MASK_STATES \
+            VertexShader = compile vs_3_0 EfEyeCaptureShiftedVS(); \
+            PixelShader = compile ps_3_0 EfEyeCaptureMaskPS(); \
+        } \
+    }
+
+#define EF_EYE_CAPTURE_HAIR_DEPTH_TECHNIQUE(name, passName) \
+    technique name < \
+        string MMDPass = passName; \
+        string Subset = EF_EYE_CAPTURE_HAIR_DEPTH_SUBSETS; \
+    > { \
+        pass DrawShiftedDepth { \
+            EF_EYE_CAPTURE_MASK_STATES \
+            /* Hair and projected hair shadow share depth but never clear */ \
+            /* eye/brow feature color. The postprocess passes through both. */ \
+            ColorWriteEnable = 0; \
+            VertexShader = compile vs_3_0 EfEyeCaptureShiftedVS(); \
+            PixelShader = compile ps_3_0 EfEyeCaptureMaskPS(); \
+        } \
+    }
+
+#define EF_EYE_CAPTURE_DEFAULT_TECHNIQUE(name, passName) \
+    technique name < string MMDPass = passName; > { \
+        pass DrawObject { \
+            EF_EYE_CAPTURE_MASK_STATES \
+            VertexShader = compile vs_3_0 EfEyeCaptureVS(); \
+            PixelShader = compile ps_3_0 EfEyeCaptureMaskPS(); \
+        } \
+    }
+
+EF_EYE_CAPTURE_FEATURE_TECHNIQUE(
+    EfEyeCaptureEyes, "object", EF_EYE_CAPTURE_EYE_SUBSETS, 1.0, true)
+EF_EYE_CAPTURE_FEATURE_TECHNIQUE(
+    EfEyeCaptureEyesSs, "object_ss", EF_EYE_CAPTURE_EYE_SUBSETS, 1.0, true)
+EF_EYE_CAPTURE_HIGHLIGHT_TECHNIQUE(EfEyeCaptureHighlight, "object")
+EF_EYE_CAPTURE_HIGHLIGHT_TECHNIQUE(EfEyeCaptureHighlightSs, "object_ss")
+EF_EYE_CAPTURE_SCLERA_TECHNIQUE(EfEyeCaptureSclera, "object")
+EF_EYE_CAPTURE_SCLERA_TECHNIQUE(EfEyeCaptureScleraSs, "object_ss")
+EF_EYE_CAPTURE_FEATURE_TECHNIQUE(
+    EfEyeCaptureBrows, "object", EF_EYE_CAPTURE_BROW_SUBSETS,
+    EfEyeCaptureBrowAlpha, false)
+EF_EYE_CAPTURE_FEATURE_TECHNIQUE(
+    EfEyeCaptureBrowsSs, "object_ss", EF_EYE_CAPTURE_BROW_SUBSETS,
+    EfEyeCaptureBrowAlpha, false)
+EF_EYE_CAPTURE_IGNORE_TECHNIQUE(EfEyeCaptureIgnore, "object")
+EF_EYE_CAPTURE_IGNORE_TECHNIQUE(EfEyeCaptureIgnoreSs, "object_ss")
+EF_EYE_CAPTURE_HAIR_DEPTH_TECHNIQUE(EfEyeCaptureHairDepth, "object")
+EF_EYE_CAPTURE_HAIR_DEPTH_TECHNIQUE(EfEyeCaptureHairDepthSs, "object_ss")
+EF_EYE_CAPTURE_SHIFT_TECHNIQUE(EfEyeCaptureShift, "object")
+EF_EYE_CAPTURE_SHIFT_TECHNIQUE(EfEyeCaptureShiftSs, "object_ss")
+EF_EYE_CAPTURE_DEFAULT_TECHNIQUE(EfEyeCaptureMask, "object")
+EF_EYE_CAPTURE_DEFAULT_TECHNIQUE(EfEyeCaptureMaskSs, "object_ss")
+
+technique EfEyeCaptureEdge < string MMDPass = "edge"; > { }
+technique EfEyeCaptureShadow < string MMDPass = "shadow"; > { }
+technique EfEyeCaptureZPlot < string MMDPass = "zplot"; > { }

@@ -348,12 +348,12 @@ public partial class MainWindow : Window
         {
             foreach (var candidate in new[]
             {
-                Path.Combine(current.FullName, "ShaderTemplate"),
                 Path.Combine(current.FullName, "EndfieldMME"),
                 current.FullName
             })
             {
-                if (File.Exists(Path.Combine(candidate, "EndfieldHair_Final.fx")) &&
+                if (File.Exists(Path.Combine(candidate, "ZMDshadow.fx")) &&
+                    File.Exists(Path.Combine(candidate, "EndfieldEyeThrough.fx")) &&
                     File.Exists(Path.Combine(candidate, "internal", "endfield_shader.hlsl"))) return candidate;
             }
             current = current.Parent;

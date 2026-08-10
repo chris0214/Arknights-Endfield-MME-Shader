@@ -7,4 +7,9 @@
     <RootNamespace>EndfieldMaterialStudio.Core</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Templates\*.fx" />
+    <EmbeddedResource Include="Templates\*.fxsub" />
+  </ItemGroup>
+
 </Project>

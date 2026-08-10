@@ -1,2 +1,0 @@
-c6a44e4365d2ce933524c59f29ceb5791b2ca4648ec8fc7d885d8978c9e10603  Arknights-Endfield-MME-Shader-2.0.0-source.zip
-03c182a41daca3252b3339cd267862a7425c272e9909fb022c08ab6cf26fe2e5  Arknights-Endfield-MME-Shader-2.0.0-win-x64.zip

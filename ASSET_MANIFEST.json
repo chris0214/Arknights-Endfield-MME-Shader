@@ -1,12 +1,61 @@
 {
-  "schema_version": 1,
-  "package_date": "2026-08-06",
-  "license": "MIT for project-authored code and documentation; see per-asset notes",
+  "schema_version": 2,
+  "package_date": "2026-08-10",
+  "project_author": "克里斯提亚娜",
+  "project_license": "MIT for project-authored or independently reimplemented code and documentation only",
   "assets": [
-    {"path":"ShaderTemplate/textures/environment_presets/*.dds","status":"redistributable","license":"CC0-1.0","note":"Converted from user-supplied CC0 HDR files"},
-    {"path":"ShaderTemplate/controller/*.pmx","status":"project-authored","license":"MIT"},
-    {"path":"ShaderTemplate/internal/**","status":"project-authored-or-reimplemented","license":"MIT"},
-    {"path":"ShaderTemplate/docs/reference/ray_mmd_LICENSE.txt","status":"notice-only","license":"MIT","note":"Preserved because IBL workflow was studied"},
-    {"path":"OptionalAssets/ProvenanceUnverified/**","status":"do-not-republish-without-review","license":"unknown","note":"Research/extracted assets, including the legacy Ray fallback; not covered by root MIT"}
+    {
+      "path": "EndfieldMME/internal/**",
+      "status": "project-authored-or-independently-reimplemented",
+      "license": "MIT"
+    },
+    {
+      "path": "EndfieldMME/controller/*.pmx",
+      "status": "project-authored",
+      "license": "MIT"
+    },
+    {
+      "path": "EndfieldMME/textures/environment_presets/*.dds",
+      "status": "redistributable",
+      "license": "CC0-1.0",
+      "note": "Converted from user-supplied CC0 HDR files; see EndfieldMME/textures/environment_presets/manifest.json."
+    },
+    {
+      "path": "EndfieldMME/docs/reference/ray_mmd_LICENSE.txt",
+      "status": "third-party-license-notice",
+      "license": "MIT",
+      "copyright": "Copyright (C) 2016-2018 Rui"
+    },
+    {
+      "path": "EndfieldMME/docs/reference/HgShadow_Readme.txt",
+      "status": "third-party-original-notice",
+      "author": "針金P",
+      "note": "Retain the original notice when redistributing the HgShadow compatibility headers."
+    },
+    {
+      "path": "EndfieldMME/textures/common/T_actor_common_*",
+      "status": "compatibility-asset-provenance-unverified",
+      "license": "unknown-not-covered-by-project-mit"
+    },
+    {
+      "path": "EndfieldMME/textures/common/Eff_MatCap_019*.png",
+      "status": "compatibility-asset-provenance-unverified",
+      "license": "unknown-not-covered-by-project-mit"
+    },
+    {
+      "path": "EndfieldMME/textures/common/PreIntegratedFGD_GGXDisneyDiffuse.png",
+      "status": "compatibility-asset-provenance-unverified",
+      "license": "unknown-not-covered-by-project-mit"
+    },
+    {
+      "path": "EndfieldMME/textures/common/rain/**",
+      "status": "compatibility-asset-provenance-unverified",
+      "license": "unknown-not-covered-by-project-mit"
+    },
+    {
+      "path": "**/*.pmx and character-specific textures outside EndfieldMME/controller",
+      "status": "excluded-from-public-packages",
+      "license": "model-author-or-rightsholder-terms"
+    }
   ]
 }

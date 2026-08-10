@@ -1,41 +1,41 @@
-	# Endfield MME 开源发行包
+# Arknights Endfield MME Shader
 
-这是面向 **MikuMikuDance 9.32 x64 + MME 0.37 x64 + DirectX 9** 的通用 Endfield 风格材质与后处理模板。它不是某一个角色的专用 Shader：GUI 会读取当前 PMX 的材质、贴图和 UV，生成对应的材质域包装与可移动角色包。
+面向 MikuMikuDance 9.32 x64、MME 0.37 x64 和 DirectX 9 的通用 Endfield 风格仿渲运行时与材质工具。项目作者：**克里斯提亚娜**。
+
+本仓库只保留一套当前发布线：`EndfieldMME`。这里没有旧版 `EndfieldMME`、1.x Manifest、角色专用 FX、角色 PMX 或模型贴图。
 
 ## 目录
 
-- `ShaderTemplate/`：通用 HLSL、FX/FXSUB、控制器、ZMDshadow、后处理和可再分发的固定资产。
-- `Tool/`：Windows GUI 发布版。默认寻找同级 `ShaderTemplate`，也可以手动选择模板目录。
-- `Source/`：GUI 的 C# 源码、测试和发布脚本。
-- `OptionalAssets/`：来源或再分发许可尚未确认的研究资产；不会被核心模板自动引用。
-- `Examples_LocalOnly/`：本机角色示例的占位目录，不含角色模型或贴图。
-- `docs/`：中文快速教程、材质映射、控制器、故障排查和致谢。
-- `ASSET_MANIFEST.json` / `SHA256SUMS.txt`：资产来源边界与文件校验。
+- `EndfieldMME/`：唯一权威运行时，包含 HLSL、FX/FXSUB、控制器、阴影/后处理入口和必要兼容贴图。
+- `GUI/`：Windows x64 单文件 `EndfieldMaterialStudio.exe`（由源码发布脚本生成）。
+- `Source/EndfieldMaterialStudio/`：GUI、PMX/EMM 生成器、模板内嵌资源和便携测试源码。
+- `docs/`：实现说明、控制器说明、参考资料和开发记录。
+- `ASSET_MANIFEST.json`：唯一有效的当前资产清单。
 
-## 三分钟开始
+## 快速开始
 
-1. 安装 MMD 9.32 x64、MME 0.37 x64 和 .NET 8 Desktop Runtime。
-2. 在 MMD 中先加载 `ShaderTemplate/ZMDshadow.x`；不要同时加载另一套阴影后端。
-3. 运行 `Tool/EndfieldShaderTool.exe`，导入 PMX，确认材质域和贴图，再生成角色包。
-4. 将生成包中的控制器拖入 MMD，按生成的材质说明把 FX 分配给对应材质。
-5. 后处理顺序固定为：**Bloom 在前，Tonemap 在后**。雨水默认关闭，主控制器雨量默认是 `0`。
+1. 安装 MMD 9.32 x64、MME 0.37 x64 和 Windows x64 运行环境。
+2. 在 MMD 中加载 `EndfieldMME/ZMDshadow.x`，再按需要加载 `EndfieldMME/EndfieldEyeThrough.x` 和 `EndfieldMME/EndfieldPost.x`。
+3. 启动 `GUI/EndfieldMaterialStudio.exe`。GUI 会自动查找同级上级目录中的 `EndfieldMME`，也可以在界面中手动选择运行时目录。
+4. 导入普通 PMX，检查材质角色和贴图槽，点击“检查工程”，再生成角色包与 EMM。
+5. 后处理顺序保持 **Bloom 在前，Tonemap 在后**。全局雨量默认关闭（0）。
 
-完整步骤见 [`QUICKSTART_CN.md`](QUICKSTART_CN.md)。
+完整流程见 [`USER_GUIDE_CN.md`](USER_GUIDE_CN.md)。
 
-## 许可边界
+## 源码构建
 
-本项目自行编写的 Shader、工具、控制器脚本和文档按根目录 `LICENSE` 发布。七套环境 DDS 是用户提供的 CC0 HDR 转换结果。`OptionalAssets/ProvenanceUnverified/` 中的 MatCap、FGD 和雨水贴图来自参考工程，未被本项目声明为可自由再分发资产；发布者应在使用前自行确认权利，或用自己的等价贴图替换。
+```powershell
+dotnet build Source/EndfieldMaterialStudio/EndfieldMaterialStudio.slnx -c Release
+dotnet run --project Source/EndfieldMaterialStudio/EndfieldMaterialStudio.Tests -c Release
+pwsh Source/EndfieldMaterialStudio/publish-win-x64.ps1
+# 可选：生成体积较大的自包含 Release
+pwsh Source/EndfieldMaterialStudio/publish-win-x64.ps1 -SelfContained
+```
 
-核心模板不携带来源未确认的 Ray 回退环境图；运行时槽位使用
-`textures/common/cloth_environment_current.dds`，可从七套 CC0 环境预设中选择。
-旧的 Ray 回退图若有本地研究需要，可从 `OptionalAssets/ProvenanceUnverified/`
-单独安装，但它不属于核心许可范围。
+发布脚本默认生成需要 .NET 8 Desktop Runtime 的轻量单文件 GUI；加 `-SelfContained` 可生成无需另装运行时的较大版本。两种模式都会输出 `artifacts/release-win-x64/GUI/EndfieldMaterialStudio.exe` 并复制当前 `EndfieldMME`，不会创建第二份运行时目录。
 
-参考工程只用于研究算法和行为，不代表代码复制或版权转移。详见 [`AUTHORS.md`](AUTHORS.md) 与 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+## 许可与参考
 
-致谢：
-- 秋大叔@知乎：阴影以及整体渲染思路；本项目重新实现并适配 MME。
-- 新杨XIYAG ：PBR 高光、材质分层、LUT 和后处理思路参考
-- ray-mmd：预过滤环境贴图工作流和 IBL 行为参考；保留 MIT 通知。
-- 針金P及 MMD/MME 社区：HgShadow：阴影与 MME 生态基础。
-- SeaTran：雨水效果代码参考。
+原创或独立重写的 Shader、GUI、控制器和文档按 MIT 发布。`ASSET_MANIFEST.json` 对游戏命名贴图、雨水贴图、MatCap/FGD 等兼容资产单独标注，它们不因根目录 MIT 自动获得再分发授权。请阅读 [`ASSET_LICENSE_BOUNDARY_CN.md`](ASSET_LICENSE_BOUNDARY_CN.md) 和 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+
+研究参考包括 ray-mmd、HgShadow、ZMD、DanbaidongRP、Goo Blender 预设、ComicalEdge 以及 MMD/MME 社区；参考不表示原作者为本项目背书，也不随包分发角色模型或 Unity/Blender 工程。详见 [`AUTHORS.md`](AUTHORS.md) 与 [`REFERENCES.md`](REFERENCES.md)。

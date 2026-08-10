@@ -1,9 +1,9 @@
 <Project>
   <PropertyGroup>
-    <Authors>克里斯提亚娜;そぼろ;给你柠檬椰果养乐多你会跟我玩吗;暮雪Official</Authors>
-    <Company>克里斯提亚娜 / そぼろ / 给你柠檬椰果养乐多你会跟我玩吗 / 暮雪Official</Company>
-    <Product>Endfield Shader Tool</Product>
-    <Description>Endfield MME shader adaptation and character package generator.</Description>
-    <Copyright>克里斯提亚娜; Endfield MME shader work © project contributors</Copyright>
+    <Authors>克里斯提亚娜</Authors>
+    <Company>克里斯提亚娜</Company>
+    <Product>Endfield Material Studio</Product>
+    <Description>Universal MMD Endfield material assignment and EyeThrough package generator.</Description>
+    <Copyright>Copyright (c) 2026 克里斯提亚娜 and contributors</Copyright>
   </PropertyGroup>
 </Project>

@@ -40,7 +40,6 @@ public sealed class PackageBuilder
                 var fxName = $"Material_{material.MaterialIndex:000}_{material.Role}.fx";
                 var fxPath = Path.Combine(staging, fxName);
                 File.WriteAllBytes(fxPath, FxTemplateEngine.BuildMaterialFx(
-                    project.RuntimeRoot,
                     material,
                     packagedTextures[material.MaterialIndex],
                     project.HeadBone,
@@ -55,10 +54,9 @@ public sealed class PackageBuilder
                 var iris = project.Materials.First(material => material.Role == MaterialRole.Iris);
                 capturePath = Path.Combine(staging, "EndfieldEyeThrough_Capture.fxsub");
                 File.WriteAllText(capturePath, FxTemplateEngine.BuildEyeCapture(
-                    project.RuntimeRoot,
                     project,
                     packagedTextures[iris.MaterialIndex],
-                    bindingFileName), new UTF8Encoding(false));
+                    project.HeadBone), new UTF8Encoding(false));
                 generated.Add(capturePath);
             }
 

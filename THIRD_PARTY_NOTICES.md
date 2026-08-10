@@ -1,24 +1,34 @@
-# 第三方与资产说明
+# 第三方通知
 
-## ZMD / HgShadow
+## HgShadow
 
-`ShaderTemplate/ZMDshadow*` 与 `HgShadow_*.fxh` 用于 MMD 阴影后端兼容。请保留 `ShaderTemplate/docs/reference/HgShadow_Readme.txt` 中的原始说明和署名。
-
-本发行包只保留运行时需要的兼容头与说明，不把完整的第三方开发树伪装成项目自有代码。
+发行运行时包含用于 ZMDshadow 兼容的 `HgShadow_CFSUSM.fxh`、`HgShadow_CLSPSM.fxh` 与 `HgShadow_Header.fxh`。原作者为 **針金P**。请随发行包保留 `EndfieldMME/docs/reference/HgShadow_Readme.txt`；其原说明明确允许使用、修改和二次配布。
 
 ## ray-mmd
 
-本项目只使用 IBL 结构和预过滤环境工作流，不加载 ray.x、GBuffer 或 ray 的后处理管线。MIT 许可文本见 `ShaderTemplate/docs/reference/ray_mmd_LICENSE.txt`。
+本项目研究了 ray-mmd 的 PBR/IBL 工作流，并保留其 MIT 许可文本：
 
-核心包不携带 Ray 回退环境图。旧回退图如需本地研究，位于
-`OptionalAssets/ProvenanceUnverified/`，不由根目录 MIT 许可覆盖。
+- Copyright (C) 2016-2018 Rui
+- `https://github.com/ray-cast/ray-mmd`
 
-## CC0 环境
+本项目不加载或捆绑 ray.x、ray-mmd GBuffer 或完整后处理管线。
 
-`ShaderTemplate/textures/environment_presets/*.dds` 是用户提供的 CC0 HDR 转换结果；清单见 `manifest.json`。原始 4K HDR 不在运行时包中。
+## ZMD / SeaTran
 
-## 来源未确认资产
+ZMD Unity 工程用于研究雨水、湿润和角色材质行为。公开来源为 `https://github.com/SeaTran-whn/ZMD`。本项目没有复制或分发该 Unity 工程；相关 HLSL 为面向 MME/DX9 的独立实现。ZMD 仓库未在根目录提供一份覆盖整个工程的统一开源许可证，因此不得把“公开可见”理解为“所有文件可任意再分发”。
 
-MatCap 019、FGD LUT 和雨水贴图目前放在 `OptionalAssets/ProvenanceUnverified/`。它们不由根目录 MIT 许可流程，覆盖。重新发布前请确认原作者许可，或者替换为自制/明确许可资源。
+## DanbaidongRP
 
+DanbaidongRP 用于研究高光、Bloom 与 Tonemap。其仓库为 `https://github.com/danbaidong1111/DanbaidongRP`，项目声明基于 Unity URP，并受 Unity Companion License 及仓库第三方通知约束。本项目没有捆绑其代码。
 
+## Goo Blender 预设
+
+新杨XIYAG 制作的 Goo Blender 终末地角色渲染工程仅用于视觉与节点结构研究。原 `.blend`、模型、游戏贴图和作者预设不包含在开源仓库或 release 中。
+
+## ComicalEdge
+
+むきえび制作的 ComicalEdge 仅用于研究屏幕空间描边闭合与 MME 控制方式。本项目没有捆绑其代码或资源。
+
+## 文章与视频
+
+公开文章、视频和截图仅用作视觉及算法研究参考，不随本项目再分发。详细链接见 `REFERENCES.md`。

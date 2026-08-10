@@ -370,21 +370,9 @@ EfClothRefineSpecular 的 NoH 使用 physicalH。不能与 H4 同时改。
 
 ## 5. 雨水贴图观察结果
 
-当前解包资源：
-
-- textures/T_actor_common_rain_01_M.png
-- textures/T_actor_common_rain_02_M.png
-- textures/T_actor_common_rain_03_M.png
-
-三张均为 1024 x 1024 ARGB。
-
-视觉用途：
-
-| 贴图 | 当前观察 |
-| --- | --- |
-| rain_01 | 分散水滴 |
-| rain_02 | 长条流动水痕 |
-| rain_03 | 下落水滴或拖尾 |
+当前运行时只保留实际使用的 `textures/common/rain/T_actor_common_rain_02_M.png`，
+并配合 `rain_drops.png` 与 `rain_drops_phase.png` 生成水滴和相位变化。未被当前 Shader
+引用的 rain_01、rain_03 已从发行树移除。
 
 已确认 Goo 的 Rain 节点对 rain_02 做了两次采样：
 

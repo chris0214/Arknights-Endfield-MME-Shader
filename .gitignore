@@ -1,0 +1,17 @@
+**/bin/
+**/obj/
+**/artifacts/
+**/.nuget/
+**/.dotnet_home/
+**/.dotnet-home/
+**/.appdata/
+**/.localappdata/
+**/.test-profile/
+**/.backups/
+.codebase-memory/
+*.user
+*.suo
+*.zip
+*.blend
+*.pmm
+*.emm

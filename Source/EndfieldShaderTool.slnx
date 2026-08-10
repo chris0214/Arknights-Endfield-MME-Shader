@@ -1,7 +1,0 @@
-<Solution>
-  <Project Path="EndfieldShaderTool.Core/EndfieldShaderTool.Core.csproj" />
-  <Project Path="EndfieldShaderTool.App/EndfieldShaderTool.App.csproj" />
-  <Project Path="EndfieldShaderTool.Tests/EndfieldShaderTool.Tests.csproj" />
-</Solution>
-
-

@@ -35,9 +35,11 @@ Assert(validation.All(message => !message.IsError), "通用 PMX 工程预检查�
 
 var result = new PackageBuilder().Build(project);
 Assert(File.Exists(result.ModelPath), "通用角色包缺少 PMX");
-Assert(File.Exists(result.EmmPath), "通用角色包缺少 EMM");
-Assert(File.Exists(Path.Combine(result.OutputDirectory, "internal", "endfield_shader.hlsl")), "通用角色包缺少 Shader 运行时");
-Console.WriteLine("GENERIC_PACKAGE_TEST_PASSED");
+        Assert(File.Exists(result.EmmPath), "通用角色包缺少 EMM");
+        Assert(File.Exists(Path.Combine(result.OutputDirectory, "internal", "endfield_shader.hlsl")), "通用角色包缺少 Shader 运行时");
+        Assert(File.ReadAllBytes(Path.Combine(result.OutputDirectory, "ZMDshadow.fx"))
+            .SequenceEqual(File.ReadAllBytes(Path.Combine(runtime, "ZMDshadow.fx"))), "输出包改写了权威 ZMDshadow.fx");
+        Console.WriteLine("GENERIC_PACKAGE_TEST_PASSED");
 
 void RunTemplateSmokeTests()
 {
@@ -110,6 +112,8 @@ void RunRuntimeCopySmokeTest()
         Assert(File.Exists(Path.Combine(output, "EndfieldEyeThrough.fx")), "运行时复制缺少眼透入口");
         Assert(File.Exists(Path.Combine(output, "ZMDshadow.fx")), "运行时复制缺少阴影入口");
         Assert(File.Exists(Path.Combine(output, "EndfieldPost.fx")), "运行时复制缺少后处理入口");
+        Assert(File.ReadAllBytes(Path.Combine(output, "ZMDshadow.fx"))
+            .SequenceEqual(File.ReadAllBytes(Path.Combine(runtime, "ZMDshadow.fx"))), "运行时复制阶段不应改写 ZMDshadow.fx");
         Assert(!Directory.Exists(Path.Combine(output, "tools")), "运行时复制不应包含开发工具");
     }
     finally

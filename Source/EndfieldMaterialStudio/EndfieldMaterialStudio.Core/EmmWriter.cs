@@ -15,7 +15,9 @@ public static class EmmWriter
         string? eyeCapturePath)
     {
         var zmd = Path.Combine(packageRoot, "ZMDshadow.x");
+        var zmdFx = Path.Combine(packageRoot, "ZMDshadow.fx");
         var eyeThrough = Path.Combine(packageRoot, "EndfieldEyeThrough.x");
+        var eyeThroughFx = Path.Combine(packageRoot, "EndfieldEyeThrough.fx");
         var controllers = ControllerPaths(packageRoot, runtimeLookupRoot);
         var lines = new List<string>
         {
@@ -32,6 +34,8 @@ public static class EmmWriter
         lines.Add(string.Empty);
         lines.Add("[Effect]");
         lines.Add("Default = none");
+        lines.Add($"Acs1 = {zmdFx}");
+        if (project.EnableEyeThrough) lines.Add($"Acs2 = {eyeThroughFx}");
         lines.Add("Pmd2 = none");
         foreach (var pair in materialFxPaths.OrderBy(pair => pair.Key))
             lines.Add($"Pmd2[{pair.Key}] = {pair.Value}");

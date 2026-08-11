@@ -24,9 +24,6 @@ public sealed class PackageBuilder
         {
             Directory.CreateDirectory(staging);
             generated.AddRange(RuntimeContract.CopyRuntime(project.RuntimeRoot, staging));
-            ZmdAutoRoutePatcher.PatchFile(Path.Combine(staging, "ZMDshadow.fx"));
-            if (project.EnableEyeThrough)
-                EyeThroughAutoRoutePatcher.PatchFile(Path.Combine(staging, "EndfieldEyeThrough.fx"));
             var packagedModelPath = CopyModelAndDependencies(modelPath, staging, outputRoot, generated);
             var packagedTextures = CopyTextures(project, staging, generated);
             const string bindingFileName = "endfield_generated_face_binding.cp932";

@@ -1,9 +1,5 @@
 # Arknights Endfield MME Shader
 
-面向 MikuMikuDance 9.32 x64、MME 0.37 x64 和 DirectX 9 的通用 Endfield 风格仿渲运行时与材质工具。项目作者：**克里斯提亚娜**。
-
-本仓库只保留一套当前发布线：`EndfieldMME`。这里没有旧版 `EndfieldMME`、1.x Manifest、角色专用 FX、角色 PMX 或模型贴图。
-
 ## 目录
 
 - `EndfieldMME/`：唯一权威运行时，包含 HLSL、FX/FXSUB、控制器、阴影/后处理入口和必要兼容贴图。

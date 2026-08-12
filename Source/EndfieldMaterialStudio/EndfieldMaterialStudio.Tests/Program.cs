@@ -35,11 +35,15 @@ Assert(validation.All(message => !message.IsError), "通用 PMX 工程预检查�
 
 var result = new PackageBuilder().Build(project);
 Assert(File.Exists(result.ModelPath), "通用角色包缺少 PMX");
-        Assert(File.Exists(result.EmmPath), "通用角色包缺少 EMM");
-        Assert(File.Exists(Path.Combine(result.OutputDirectory, "internal", "endfield_shader.hlsl")), "通用角色包缺少 Shader 运行时");
-        Assert(File.ReadAllBytes(Path.Combine(result.OutputDirectory, "ZMDshadow.fx"))
-            .SequenceEqual(File.ReadAllBytes(Path.Combine(runtime, "ZMDshadow.fx"))), "输出包改写了权威 ZMDshadow.fx");
-        Console.WriteLine("GENERIC_PACKAGE_TEST_PASSED");
+Assert(File.Exists(result.EmmPath), "通用角色包缺少 EMM");
+Assert(File.Exists(Path.Combine(result.OutputDirectory, "internal", "endfield_shader.hlsl")),
+    "通用角色包缺少 Shader 运行时");
+Assert(File.Exists(Path.Combine(result.OutputDirectory, "EndfieldHairVisibility_Capture.fxsub")),
+    "通用角色包缺少头发可见性 Capture");
+Assert(File.ReadAllBytes(Path.Combine(result.OutputDirectory, "ZMDshadow.fx"))
+    .SequenceEqual(File.ReadAllBytes(Path.Combine(runtime, "ZMDshadow.fx"))),
+    "输出包改写了权威 ZMDshadow.fx");
+Console.WriteLine("GENERIC_PACKAGE_TEST_PASSED");
 
 void RunTemplateSmokeTests()
 {
@@ -100,6 +104,14 @@ void RunTemplateSmokeTests()
         }
     };
     AssertGeneratedText(FxTemplateEngine.BuildEyeCapture(captureProject, slots, captureProject.HeadBone), "EyeThrough Capture");
+    var hairVisibility = FxTemplateEngine.BuildHairVisibilityCapture(captureProject);
+    AssertGeneratedText(hairVisibility, "Hair Visibility Capture");
+    Assert(hairVisibility.Contains("#define EF_HAIR_VISIBILITY_SUBSETS \"5\"", StringComparison.Ordinal),
+        "Hair Visibility Capture 没有使用 Hair 材质索引");
+    Assert(hairVisibility.Contains(
+            "#define EF_HAIR_VISIBILITY_FACE_OCCLUDER_SUBSETS \"0,1,3\"",
+            StringComparison.Ordinal),
+        "Hair Visibility Capture 没有使用 Face/Iris/EyeWhite 遮挡索引");
 }
 
 void RunRuntimeCopySmokeTest()
@@ -110,6 +122,8 @@ void RunRuntimeCopySmokeTest()
         var copied = RuntimeContract.CopyRuntime(runtime, output);
         Assert(copied.Count > 0, "运行时复制没有产生文件");
         Assert(File.Exists(Path.Combine(output, "EndfieldEyeThrough.fx")), "运行时复制缺少眼透入口");
+        Assert(File.Exists(Path.Combine(output, "EndfieldHairVisibility_Capture.fxsub")),
+            "运行时复制缺少头发可见性 Capture");
         Assert(File.Exists(Path.Combine(output, "ZMDshadow.fx")), "运行时复制缺少阴影入口");
         Assert(File.Exists(Path.Combine(output, "EndfieldPost.fx")), "运行时复制缺少后处理入口");
         Assert(File.ReadAllBytes(Path.Combine(output, "ZMDshadow.fx"))

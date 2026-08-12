@@ -58,21 +58,23 @@
 #ifndef EF_FACE_SHADOW_RECEIVER_MASK_ENABLED
 #define EF_FACE_SHADOW_RECEIVER_MASK_ENABLED 1
 #endif
-#ifndef EF_FACE_SHADOW_RECEIVER_ST_ENABLED
-#define EF_FACE_SHADOW_RECEIVER_ST_ENABLED 0
-#endif
-#ifndef EF_FACE_SHADOW_RECEIVER_ST_TEXTURE_RESOURCE
-#define EF_FACE_SHADOW_RECEIVER_ST_TEXTURE_RESOURCE \
-    "textures/common/T_actor_common_female_face_01_ST.png"
-#endif
-#ifndef EF_FACE_SHADOW_RECEIVER_ST_THRESHOLD
-#define EF_FACE_SHADOW_RECEIVER_ST_THRESHOLD 0.05
+#ifndef EF_FACE_SHADOW_RECEIVER_THRESHOLD
+#define EF_FACE_SHADOW_RECEIVER_THRESHOLD 0.05
 #endif
 #ifndef EF_FACE_SHADOW_RECEIVER_NORMAL_START
 #define EF_FACE_SHADOW_RECEIVER_NORMAL_START -0.05
 #endif
 #ifndef EF_FACE_SHADOW_RECEIVER_NORMAL_END
 #define EF_FACE_SHADOW_RECEIVER_NORMAL_END 0.25
+#endif
+#ifndef EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_ENABLED
+#define EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_ENABLED 0
+#endif
+#ifndef EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_DEBUG
+#define EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_DEBUG 0
+#endif
+#ifndef EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_OFFSET
+#define EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_OFFSET 0.0
 #endif
 #ifndef EF_FACE_HEAD_BASIS_DEBUG
 #define EF_FACE_HEAD_BASIS_DEBUG 0
@@ -296,20 +298,6 @@ sampler2D EfFaceCmmSampler = sampler_state {
 };
 #endif
 
-#if EF_FACE_STENCIL_WRITE_ENABLED && EF_FACE_SHADOW_RECEIVER_ST_ENABLED
-texture2D EfFaceShadowReceiverStTexture <
-    string ResourceName = EF_FACE_SHADOW_RECEIVER_ST_TEXTURE_RESOURCE;
->;
-sampler2D EfFaceShadowReceiverStSampler = sampler_state {
-    texture = <EfFaceShadowReceiverStTexture>;
-    MinFilter = LINEAR;
-    MagFilter = LINEAR;
-    MipFilter = LINEAR;
-    AddressU = CLAMP;
-    AddressV = CLAMP;
-};
-#endif
-
 #if EF_FACE_ZMD_SHADOW_ENABLED
 shared texture2D EF_FACE_SHADOW_VIEWPORT_MAP : RENDERCOLORTARGET;
 sampler2D EfFaceZmdShadowSampler = sampler_state {
@@ -466,7 +454,7 @@ float3 EfFaceApplyRdColor(float3 diffuseColor, float3 rdColor)
 }
 #endif
 
-#if EF_FACE_HEAD_BASIS_DEBUG || EF_FACE_SDF_MIRROR_FLAG_DEBUG || EF_FACE_SDF_MIRRORED_R_DEBUG || EF_FACE_SDF_CHANNEL_SELECT_DEBUG || EF_FACE_SDF_THRESHOLD_DEBUG || EF_FACE_SDF_GOO_ANGLE_DEBUG || EF_FACE_SSS_ENABLED || EF_FACE_ZMD_SHADOW_ENABLED || EF_FACE_LIP_SPECULAR_ENABLED || EF_FACE_RIM_ENABLED || EF_FACE_STENCIL_WRITE_ENABLED
+#if EF_FACE_HEAD_BASIS_DEBUG || EF_FACE_SDF_MIRROR_FLAG_DEBUG || EF_FACE_SDF_MIRRORED_R_DEBUG || EF_FACE_SDF_CHANNEL_SELECT_DEBUG || EF_FACE_SDF_THRESHOLD_DEBUG || EF_FACE_SDF_GOO_ANGLE_DEBUG || EF_FACE_SSS_ENABLED || EF_FACE_ZMD_SHADOW_ENABLED || EF_FACE_LIP_SPECULAR_ENABLED || EF_FACE_RIM_ENABLED || EF_FACE_STENCIL_WRITE_ENABLED || EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_ENABLED || EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_DEBUG
 void EfFaceGetHeadBasis(out float3 headFront, out float3 headRight,
     out float3 headUp, out float valid)
 {
@@ -497,6 +485,17 @@ void EfFaceGetHeadBasis(out float3 headFront, out float3 headRight,
 
     headUp = normalize(upAxis);
     headRight = normalize(cross(headUp, headFront));
+}
+#endif
+
+#if EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_ENABLED || EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_DEBUG
+float EfFaceComputeShadowReceiverFrontMask(
+    float3 positionWS,
+    float3 headFront)
+{
+    float3 headOriginWS = EfFaceHeadBone._41_42_43;
+    float frontDepth = dot(positionWS - headOriginWS, headFront);
+    return step(EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_OFFSET, frontDepth);
 }
 #endif
 
@@ -573,7 +572,7 @@ struct EfFaceVaryings {
     float4 positionCS : POSITION;
     float2 uv : TEXCOORD0;
     float3 normalWS : TEXCOORD1;
-#if EF_FACE_SSS_ENABLED || EF_FACE_LIP_SPECULAR_ENABLED || EF_FACE_RIM_ENABLED
+#if EF_FACE_SSS_ENABLED || EF_FACE_LIP_SPECULAR_ENABLED || EF_FACE_RIM_ENABLED || EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_ENABLED || EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_DEBUG
     float3 positionWS : TEXCOORD2;
 #endif
 #if EF_FACE_ZMD_SHADOW_ENABLED
@@ -587,7 +586,7 @@ EfFaceVaryings EfFaceVS(EfFaceAttributes input)
     output.positionCS = mul(input.positionOS, matWorldViewProject);
     output.uv = input.texcoord0;
     output.normalWS = normalize(mul(input.normalOS, (float3x3)matWorld));
-#if EF_FACE_SSS_ENABLED || EF_FACE_LIP_SPECULAR_ENABLED || EF_FACE_RIM_ENABLED
+#if EF_FACE_SSS_ENABLED || EF_FACE_LIP_SPECULAR_ENABLED || EF_FACE_RIM_ENABLED || EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_ENABLED || EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_DEBUG
     output.positionWS = mul(input.positionOS, matWorld).xyz;
 #endif
 #if EF_FACE_ZMD_SHADOW_ENABLED
@@ -629,7 +628,7 @@ float EfFaceComputeSssArea(EfFaceVaryings input, float3 headFront,
 
 float4 EfFacePS(EfFaceVaryings input, uniform bool useTexture) : COLOR0
 {
-#if EF_FACE_HEAD_BASIS_DEBUG || EF_FACE_SDF_MIRROR_FLAG_DEBUG || EF_FACE_SDF_MIRRORED_R_DEBUG || EF_FACE_SDF_CHANNEL_SELECT_DEBUG || EF_FACE_SDF_THRESHOLD_DEBUG || EF_FACE_SDF_GOO_ANGLE_DEBUG || EF_FACE_SSS_ENABLED || EF_FACE_ZMD_SHADOW_ENABLED || EF_FACE_LIP_SPECULAR_ENABLED || EF_FACE_RIM_ENABLED
+#if EF_FACE_HEAD_BASIS_DEBUG || EF_FACE_SDF_MIRROR_FLAG_DEBUG || EF_FACE_SDF_MIRRORED_R_DEBUG || EF_FACE_SDF_CHANNEL_SELECT_DEBUG || EF_FACE_SDF_THRESHOLD_DEBUG || EF_FACE_SDF_GOO_ANGLE_DEBUG || EF_FACE_SSS_ENABLED || EF_FACE_ZMD_SHADOW_ENABLED || EF_FACE_LIP_SPECULAR_ENABLED || EF_FACE_RIM_ENABLED || EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_DEBUG
     float3 headFront;
     float3 headRight;
     float3 headUp;
@@ -638,6 +637,12 @@ float4 EfFacePS(EfFaceVaryings input, uniform bool useTexture) : COLOR0
     if (headBasisValid < 0.5) {
         return float4(1.0, 0.0, 1.0, 1.0);
     }
+#endif
+
+#if EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_DEBUG
+    float frontMask = EfFaceComputeShadowReceiverFrontMask(
+        input.positionWS, headFront);
+    return float4(frontMask.xxx, 1.0);
 #endif
 
 #if EF_FACE_ZMD_SHADOW_RAW_DEBUG
@@ -979,13 +984,9 @@ float4 EfFaceShadowReceiverMaskPS(
     float facing : VFACE) : COLOR0
 {
 #if EF_FACE_SHADOW_RECEIVER_MASK_ENABLED
-    // Face ST.g is the shared soft eye/upper-face region across Endfield
-    // characters. It excludes ear and mouth islands before stencil writing.
-    float authoredFace = 1.0;
-#if EF_FACE_SHADOW_RECEIVER_ST_ENABLED
-    authoredFace = tex2D(
-        EfFaceShadowReceiverStSampler, input.uv).g;
-#endif
+    // The face material defines the stencil receiver. Face ST is packed
+    // material data, not a validated hair-shadow receiver mask; sampling it
+    // here removes valid forehead pixels on otherwise compatible characters.
     float3 headFront;
     float3 headRight;
     float3 headUp;
@@ -1001,8 +1002,12 @@ float4 EfFaceShadowReceiverMaskPS(
             EF_FACE_SHADOW_RECEIVER_NORMAL_START + 1e-4),
         dot(normalWS, headFront));
     normalFacing = lerp(1.0, normalFacing, saturate(headBasisValid));
-    float receiverMask = authoredFace * normalFacing;
-    clip(receiverMask - EF_FACE_SHADOW_RECEIVER_ST_THRESHOLD);
+    float receiverMask = normalFacing;
+#if EF_FACE_SHADOW_RECEIVER_LOCAL_FRONT_ENABLED
+    receiverMask *= EfFaceComputeShadowReceiverFrontMask(
+        input.positionWS, headFront);
+#endif
+    clip(receiverMask - EF_FACE_SHADOW_RECEIVER_THRESHOLD);
 #endif
     return 0.0;
 }
@@ -1042,31 +1047,29 @@ float4 EfFaceOutlinePS(EfFaceOutlineVaryings input) : COLOR0
 #ifndef EF_NO_TECHNIQUES
 #if EF_FACE_STENCIL_WRITE_ENABLED
 #define EF_FACE_OBJECT_SCRIPT \
-    "RenderColorTarget0=;Pass=WriteHairShadowMask;Pass=DrawObject;"
-#define EF_FACE_STENCIL_OBJECT_PASS \
-        pass WriteHairShadowMask { \
-            AlphaTestEnable = false; \
-            AlphaBlendEnable = false; \
-            ColorWriteEnable = 0; \
-            ZEnable = true; \
-            ZWriteEnable = true; \
-            ZFunc = LESSEQUAL; \
-            CullMode = EF_FACE_CULL_MODE; \
-            StencilEnable = true; \
-            StencilFunc = ALWAYS; \
-            StencilRef = EF_FACE_STENCIL_REF; \
-            StencilWriteMask = EF_FACE_STENCIL_WRITE_MASK; \
-            StencilFail = KEEP; \
-            StencilZFail = KEEP; \
-            StencilPass = REPLACE; \
-            VertexShader = compile vs_3_0 EfFaceVS(); \
-            PixelShader = compile ps_3_0 EfFaceShadowReceiverMaskPS(); \
-        }
+    "RenderColorTarget0=;Pass=DrawObject;"
+#define EF_FACE_STENCIL_OBJECT_PASS
 #else
 #define EF_FACE_OBJECT_SCRIPT "RenderColorTarget0=;Pass=DrawObject;"
 #define EF_FACE_STENCIL_OBJECT_PASS
 #endif
 
+#if EF_FACE_STENCIL_WRITE_ENABLED
+#define EF_FACE_PASS_STATES \
+    AlphaTestEnable = false; \
+    AlphaBlendEnable = false; \
+    ColorWriteEnable = 15; \
+    ZEnable = true; \
+    ZWriteEnable = true; \
+    ZFunc = LESSEQUAL; \
+    StencilEnable = true; \
+    StencilFunc = ALWAYS; \
+    StencilRef = EF_FACE_STENCIL_REF; \
+    StencilWriteMask = EF_FACE_STENCIL_WRITE_MASK; \
+    StencilFail = KEEP; \
+    StencilZFail = KEEP; \
+    StencilPass = REPLACE;
+#else
 #define EF_FACE_PASS_STATES \
     AlphaTestEnable = false; \
     AlphaBlendEnable = false; \
@@ -1075,6 +1078,7 @@ float4 EfFaceOutlinePS(EfFaceOutlineVaryings input) : COLOR0
     ZWriteEnable = true; \
     ZFunc = LESSEQUAL; \
     StencilEnable = false;
+#endif
 
 #define EF_FACE_TECHNIQUE(name, passName, useTextureValue) \
     technique name < \

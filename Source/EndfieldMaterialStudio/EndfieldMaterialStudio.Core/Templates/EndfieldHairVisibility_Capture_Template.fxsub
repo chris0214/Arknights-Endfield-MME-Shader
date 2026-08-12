@@ -1,0 +1,5 @@
+// Generated per character. Face-group subsets establish the nearest visible
+// head depth; only hair fragments in front of that depth can cast face shadow.
+#define EF_HAIR_VISIBILITY_SUBSETS "2147483647"
+#define EF_HAIR_VISIBILITY_FACE_OCCLUDER_SUBSETS "2147483647"
+#include "internal/endfield_hair_visibility_capture_core.fxsub"

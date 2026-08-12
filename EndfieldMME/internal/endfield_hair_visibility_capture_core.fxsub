@@ -1,0 +1,136 @@
+#ifndef ENDFIELD_HAIR_VISIBILITY_CAPTURE_INCLUDED
+#define ENDFIELD_HAIR_VISIBILITY_CAPTURE_INCLUDED
+
+#ifndef EF_HAIR_VISIBILITY_SUBSETS
+#define EF_HAIR_VISIBILITY_SUBSETS "2147483647"
+#endif
+#ifndef EF_HAIR_VISIBILITY_FACE_OCCLUDER_SUBSETS
+#define EF_HAIR_VISIBILITY_FACE_OCCLUDER_SUBSETS "2147483647"
+#endif
+
+float4x4 EfHairVisibilityWorldViewProjection : WORLDVIEWPROJECTION;
+float4 EfHairVisibilityMaterialDiffuse : DIFFUSE <
+    string Object = "Geometry";
+>;
+bool use_texture;
+
+texture2D EfHairVisibilityMaterialTexture : MATERIALTEXTURE;
+sampler2D EfHairVisibilityMaterialSampler = sampler_state {
+    texture = <EfHairVisibilityMaterialTexture>;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = LINEAR;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
+
+struct EfHairVisibilityVaryings {
+    float4 positionCS : POSITION;
+    float2 depthZW : TEXCOORD0;
+    float2 uv : TEXCOORD1;
+};
+
+EfHairVisibilityVaryings EfHairVisibilityVS(
+    float4 positionOS : POSITION,
+    float2 uv : TEXCOORD0)
+{
+    EfHairVisibilityVaryings output;
+    output.positionCS = mul(positionOS, EfHairVisibilityWorldViewProjection);
+    output.depthZW = output.positionCS.zw;
+    output.uv = uv;
+    return output;
+}
+
+float3 EfHairVisibilityEncodeDepth(float depth)
+{
+    float3 packed = frac(depth * float3(1.0, 255.0, 65025.0));
+    packed.xy -= packed.yz / 255.0;
+    return packed;
+}
+
+float4 EfHairVisibilityPS(EfHairVisibilityVaryings input) : COLOR0
+{
+    float coverage = saturate(EfHairVisibilityMaterialDiffuse.a);
+    if (use_texture) {
+        coverage *= tex2D(EfHairVisibilityMaterialSampler, input.uv).a;
+    }
+    clip(coverage - 0.01);
+    float depth = saturate(input.depthZW.x / max(abs(input.depthZW.y), 1e-6));
+    return float4(EfHairVisibilityEncodeDepth(depth), 1.0);
+}
+
+float4 EfHairVisibilityFaceOccluderPS(
+    EfHairVisibilityVaryings input) : COLOR0
+{
+    // Alpha zero marks this pixel as face-occluded. Writing black as well
+    // keeps older RGB-only comparisons conservative.
+    return 0.0;
+}
+
+float4 EfHairVisibilityMaskPS(EfHairVisibilityVaryings input) : COLOR0
+{
+    return 0.0;
+}
+
+#define EF_HAIR_VISIBILITY_TECHNIQUE(name, passName) \
+    technique name < \
+        string MMDPass = passName; \
+        string Subset = EF_HAIR_VISIBILITY_SUBSETS; \
+    > { \
+        pass CaptureNearestHair { \
+            ZEnable = true; \
+            ZWriteEnable = true; \
+            ZFunc = LESS; \
+            CullMode = NONE; \
+            AlphaTestEnable = false; \
+            AlphaBlendEnable = false; \
+            ColorWriteEnable = 15; \
+            VertexShader = compile vs_3_0 EfHairVisibilityVS(); \
+            PixelShader = compile ps_3_0 EfHairVisibilityPS(); \
+        } \
+    }
+
+#define EF_HAIR_VISIBILITY_FACE_OCCLUDER_TECHNIQUE(name, passName) \
+    technique name < \
+        string MMDPass = passName; \
+        string Subset = EF_HAIR_VISIBILITY_FACE_OCCLUDER_SUBSETS; \
+    > { \
+        pass CaptureFaceOccluder { \
+            ZEnable = true; \
+            ZWriteEnable = true; \
+            ZFunc = LESS; \
+            CullMode = NONE; \
+            AlphaTestEnable = false; \
+            AlphaBlendEnable = false; \
+            ColorWriteEnable = 15; \
+            VertexShader = compile vs_3_0 EfHairVisibilityVS(); \
+            PixelShader = compile ps_3_0 \
+                EfHairVisibilityFaceOccluderPS(); \
+        } \
+    }
+
+#define EF_HAIR_VISIBILITY_DEFAULT_TECHNIQUE(name, passName) \
+    technique name < string MMDPass = passName; > { \
+        pass IgnoreOtherMaterials { \
+            ZEnable = false; \
+            ZWriteEnable = false; \
+            ZFunc = ALWAYS; \
+            CullMode = NONE; \
+            AlphaTestEnable = false; \
+            AlphaBlendEnable = false; \
+            ColorWriteEnable = 0; \
+            VertexShader = compile vs_3_0 EfHairVisibilityVS(); \
+            PixelShader = compile ps_3_0 EfHairVisibilityMaskPS(); \
+        } \
+    }
+
+EF_HAIR_VISIBILITY_TECHNIQUE(EfHairVisibilityObject, "object")
+EF_HAIR_VISIBILITY_TECHNIQUE(EfHairVisibilityObjectSs, "object_ss")
+EF_HAIR_VISIBILITY_FACE_OCCLUDER_TECHNIQUE(
+    EfHairVisibilityFaceOccluder, "object")
+EF_HAIR_VISIBILITY_FACE_OCCLUDER_TECHNIQUE(
+    EfHairVisibilityFaceOccluderSs, "object_ss")
+EF_HAIR_VISIBILITY_DEFAULT_TECHNIQUE(EfHairVisibilityMask, "object")
+EF_HAIR_VISIBILITY_DEFAULT_TECHNIQUE(EfHairVisibilityMaskSs, "object_ss")
+
+#endif

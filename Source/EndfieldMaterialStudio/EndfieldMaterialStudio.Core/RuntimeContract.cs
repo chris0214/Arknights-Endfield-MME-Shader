@@ -19,6 +19,7 @@ public static class RuntimeContract
 
     private static readonly string[] RequiredTopLevelFiles =
     {
+        "EndfieldHairVisibility_Capture.fxsub",
         "EndfieldEyeThrough_Capture.fxsub",
         "EndfieldEyeThrough_Mask.fxsub",
         "EndfieldEyeThrough.fx",

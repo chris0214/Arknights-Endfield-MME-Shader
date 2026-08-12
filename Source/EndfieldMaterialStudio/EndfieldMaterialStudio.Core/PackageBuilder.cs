@@ -57,6 +57,14 @@ public sealed class PackageBuilder
                 generated.Add(capturePath);
             }
 
+            var hairVisibilityCapturePath = Path.Combine(
+                staging, "EndfieldHairVisibility_Capture.fxsub");
+            File.WriteAllText(
+                hairVisibilityCapturePath,
+                FxTemplateEngine.BuildHairVisibilityCapture(project),
+                new UTF8Encoding(false));
+            generated.Add(hairVisibilityCapturePath);
+
             var finalMaterialFx = materialFx.ToDictionary(
                 pair => pair.Key,
                 pair => Path.Combine(outputRoot, Path.GetRelativePath(staging, pair.Value)));

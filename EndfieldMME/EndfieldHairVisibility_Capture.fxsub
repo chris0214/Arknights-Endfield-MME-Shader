@@ -1,0 +1,4 @@
+// Fallback capture wrapper. Generated character packages replace the subset.
+#define EF_HAIR_VISIBILITY_SUBSETS "2147483647"
+#define EF_HAIR_VISIBILITY_FACE_OCCLUDER_SUBSETS "2147483647"
+#include "internal/endfield_hair_visibility_capture_core.fxsub"

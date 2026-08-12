@@ -569,6 +569,36 @@
 #ifndef EF_HAIR_FACE_SHADOW_ZFUNC
 #define EF_HAIR_FACE_SHADOW_ZFUNC LESSEQUAL
 #endif
+#ifndef EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_ENABLED
+#define EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_ENABLED 0
+#endif
+#ifndef EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_DEBUG
+#define EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_DEBUG 0
+#endif
+#ifndef EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_OFFSET
+#define EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_OFFSET 0.0
+#endif
+#ifndef EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_ENABLED
+#define EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_ENABLED 0
+#endif
+#ifndef EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_DEBUG
+#define EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_DEBUG 0
+#endif
+#ifndef EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_TOLERANCE
+#define EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_TOLERANCE 0.00008
+#endif
+#ifndef EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_SLOPE_SCALE
+#define EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_SLOPE_SCALE 0.75
+#endif
+#ifndef EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_MAX_TOLERANCE
+#define EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_MAX_TOLERANCE 0.00035
+#endif
+#ifndef EF_HAIR_FACE_SHADOW_FACE_DEPTH_ENABLED
+#define EF_HAIR_FACE_SHADOW_FACE_DEPTH_ENABLED 0
+#endif
+#ifndef EF_HAIR_FACE_SHADOW_FACE_DEPTH_DEBUG
+#define EF_HAIR_FACE_SHADOW_FACE_DEPTH_DEBUG 0
+#endif
 #ifndef EF_HAIR_FACE_SHADOW_COLOR
 #define EF_HAIR_FACE_SHADOW_COLOR float3(0.36, 0.25, 0.28)
 #endif
@@ -954,6 +984,24 @@ sampler2D EfHgShadowSampler = sampler_state {
     AddressU = CLAMP; AddressV = CLAMP;
 };
 float2 EfViewportSize : VIEWPORTPIXELSIZE;
+#if EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_ENABLED || EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_DEBUG
+#ifndef EF_HAIR_VISIBILITY_RT_DECLARED
+shared texture2D EndfieldHairVisibility_RT : OFFSCREENRENDERTARGET;
+#endif
+sampler2D EfHairVisibilitySampler = sampler_state {
+    texture = <EndfieldHairVisibility_RT>;
+    MinFilter = POINT; MagFilter = POINT; MipFilter = NONE;
+    AddressU = CLAMP; AddressV = CLAMP;
+};
+#endif
+#if EF_HAIR_FACE_SHADOW_FACE_DEPTH_ENABLED || EF_HAIR_FACE_SHADOW_FACE_DEPTH_DEBUG
+shared texture2D EndfieldFaceDepth_RT : OFFSCREENRENDERTARGET;
+sampler2D EfFaceDepthSampler = sampler_state {
+    texture = <EndfieldFaceDepth_RT>;
+    MinFilter = POINT; MagFilter = POINT; MipFilter = NONE;
+    AddressU = CLAMP; AddressV = CLAMP;
+};
+#endif
 bool  EfHgShadowValid : CONTROLOBJECT < string name = EF_SHADOW_CONTROLLER_NAME; >;
 float EfHgShadowRotation : CONTROLOBJECT < string name = EF_SHADOW_CONTROLLER_NAME; string item = "Rx"; >;
 float EfHgShadowDensityUp : CONTROLOBJECT < string name = "(self)"; string item = "ShadowDen+"; >;
@@ -982,6 +1030,14 @@ float3 EfUnpackNormal(float2 packedXY, float scale)
     float z = sqrt(1.0 - saturate(dot(xy, xy)));
     return float3(xy, z);
 }
+
+#if EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_ENABLED || EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_DEBUG || EF_HAIR_FACE_SHADOW_FACE_DEPTH_ENABLED || EF_HAIR_FACE_SHADOW_FACE_DEPTH_DEBUG
+float EfHairVisibilityDecodeDepth(float3 packedDepth)
+{
+    return dot(packedDepth, float3(
+        1.0, 1.0 / 255.0, 1.0 / 65025.0));
+}
+#endif
 
 // HgShadow screen-space visibility (1 = lit, 0 = fully occluded).
 float EfSampleHgShadow(float4 screenPosition)
@@ -2366,6 +2422,12 @@ float4 EfHairRimPS(EfHairRimVaryings input, float facing : VFACE) : COLOR0
 struct EfHairFaceShadowVaryings {
     float4 positionCS : POSITION;
     float2 uv         : TEXCOORD0;
+#if EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_ENABLED || EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_DEBUG
+    float sourceCameraSideDepth : TEXCOORD1;
+#endif
+#if EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_ENABLED || EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_DEBUG || EF_HAIR_FACE_SHADOW_FACE_DEPTH_ENABLED || EF_HAIR_FACE_SHADOW_FACE_DEPTH_DEBUG
+    float4 sourcePositionCS : TEXCOORD2;
+#endif
 };
 
 EfHairFaceShadowVaryings EfHairFaceShadowVS(EfAttributes input)
@@ -2373,6 +2435,19 @@ EfHairFaceShadowVaryings EfHairFaceShadowVS(EfAttributes input)
     EfHairFaceShadowVaryings output = (EfHairFaceShadowVaryings)0;
     float3 positionWS = mul(input.positionOS, matWorld).xyz;
     float3 positionVS = mul(float4(positionWS, 1.0), matView).xyz;
+
+#if EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_ENABLED || EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_DEBUG || EF_HAIR_FACE_SHADOW_FACE_DEPTH_ENABLED || EF_HAIR_FACE_SHADOW_FACE_DEPTH_DEBUG
+    output.sourcePositionCS = mul(
+        float4(positionVS, 1.0), matProjection);
+#endif
+
+#if EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_ENABLED || EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_DEBUG
+    float3 headOriginWS = EfHairFaceShadowHeadBone._41_42_43;
+    float3 headToCameraWS = EfNormalizeOr(
+        CameraPosition - headOriginWS, float3(0.0, 0.0, -1.0));
+    output.sourceCameraSideDepth = dot(
+        positionWS - headOriginWS, headToCameraWS);
+#endif
 
     // Fringe projection always follows MMD's native directional light. Do not
     // inherit the optional camera-locked art light used by other hair terms.
@@ -2425,6 +2500,71 @@ EfHairFaceShadowVaryings EfHairFaceShadowVS(EfAttributes input)
 float4 EfHairFaceShadowPS(EfHairFaceShadowVaryings input,
     uniform bool useTexture) : COLOR0
 {
+#if EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_ENABLED || EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_DEBUG || EF_HAIR_FACE_SHADOW_FACE_DEPTH_ENABLED || EF_HAIR_FACE_SHADOW_FACE_DEPTH_DEBUG
+    float sourceClipValid = step(1e-6, abs(input.sourcePositionCS.w));
+    float2 sourceNdc = input.sourcePositionCS.xy
+        / max(abs(input.sourcePositionCS.w), 1e-6);
+    float2 sourceUv = float2(
+        (1.0 + sourceNdc.x) * 0.5,
+        (1.0 - sourceNdc.y) * 0.5);
+    sourceUv += 0.5 / max(EfViewportSize, 1.0);
+    float sourceInside = step(0.0, sourceUv.x)
+        * step(sourceUv.x, 1.0)
+        * step(0.0, sourceUv.y)
+        * step(sourceUv.y, 1.0);
+    float sourceDepth = saturate(
+        input.sourcePositionCS.z
+            / max(abs(input.sourcePositionCS.w), 1e-6));
+    float depthSlope = abs(ddx(sourceDepth)) + abs(ddy(sourceDepth));
+    float visibilityTolerance = min(
+        max(EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_TOLERANCE,
+            depthSlope
+                * EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_SLOPE_SCALE),
+        max(EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_MAX_TOLERANCE,
+            EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_TOLERANCE));
+#endif
+
+#if EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_ENABLED || EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_DEBUG
+    float4 capturedHair = tex2D(EfHairVisibilitySampler, sourceUv);
+    float capturedDepth = EfHairVisibilityDecodeDepth(capturedHair.rgb);
+    float capturedHairValid = step(0.5, capturedHair.a);
+    float sourceVisible = sourceClipValid * sourceInside
+        * capturedHairValid
+        * step(sourceDepth, capturedDepth + visibilityTolerance);
+#if EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_DEBUG
+    return float4(sourceVisible.xxx, 1.0);
+#endif
+#if EF_HAIR_FACE_SHADOW_SOURCE_VISIBILITY_ENABLED
+    clip(sourceVisible - 0.5);
+#endif
+#endif
+
+#if EF_HAIR_FACE_SHADOW_FACE_DEPTH_ENABLED || EF_HAIR_FACE_SHADOW_FACE_DEPTH_DEBUG
+    float4 capturedFace = tex2D(EfFaceDepthSampler, sourceUv);
+    float faceDepth = EfHairVisibilityDecodeDepth(capturedFace.rgb);
+    float faceDepthValid = step(0.5, capturedFace.a);
+    float sourceInFrontOfFace = sourceClipValid * sourceInside
+        * faceDepthValid
+        * step(sourceDepth, faceDepth + visibilityTolerance);
+#if EF_HAIR_FACE_SHADOW_FACE_DEPTH_DEBUG
+    return float4(sourceInFrontOfFace.xxx, 1.0);
+#endif
+#if EF_HAIR_FACE_SHADOW_FACE_DEPTH_ENABLED
+    clip(sourceInFrontOfFace - 0.5);
+#endif
+#endif
+
+#if EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_DEBUG
+    float cameraSideMask = step(
+        EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_OFFSET,
+        input.sourceCameraSideDepth);
+    return float4(cameraSideMask.xxx, 1.0);
+#endif
+#if EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_ENABLED
+    clip(input.sourceCameraSideDepth
+        - EF_HAIR_FACE_SHADOW_SOURCE_CAMERA_SIDE_OFFSET);
+#endif
+
     float coverage = 1.0;
 #if EF_HAIR_FACE_SHADOW_USE_D_ALPHA
     if (useTexture) {

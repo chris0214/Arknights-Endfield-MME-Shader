@@ -67,6 +67,16 @@ public static class FxTemplateEngine
         return text;
     }
 
+    public static string BuildHairVisibilityCapture(StudioProject project)
+    {
+        var text = ReadTemplate("EndfieldHairVisibility_Capture_Template.fxsub");
+        text = ReplaceDefineString(text, "EF_HAIR_VISIBILITY_SUBSETS",
+            Subsets(project, MaterialRole.Hair));
+        text = ReplaceDefineString(text, "EF_HAIR_VISIBILITY_FACE_OCCLUDER_SUBSETS",
+            Subsets(project, MaterialRole.Face, MaterialRole.Iris, MaterialRole.EyeWhite));
+        return text;
+    }
+
     private static string BuildFace(TextureSlots textures, string bindingFileName)
     {
         var entry = ReadTemplate("EndfieldFace_Template.fx");

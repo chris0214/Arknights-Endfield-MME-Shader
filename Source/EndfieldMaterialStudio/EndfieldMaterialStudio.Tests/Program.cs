@@ -128,6 +128,11 @@ void RunRuntimeCopySmokeTest()
         Assert(File.Exists(Path.Combine(output, "EndfieldPost.fx")), "运行时复制缺少后处理入口");
         Assert(File.ReadAllBytes(Path.Combine(output, "ZMDshadow.fx"))
             .SequenceEqual(File.ReadAllBytes(Path.Combine(runtime, "ZMDshadow.fx"))), "运行时复制阶段不应改写 ZMDshadow.fx");
+        var shaderCore = File.ReadAllText(Path.Combine(output, "internal", "endfield_shader.hlsl"));
+        Assert(shaderCore.Contains("EF_HAIR_FACE_SHADOW_SINGLE_BLEND_MASK", StringComparison.Ordinal),
+            "运行时 Shader 缺少发影单次混合锁");
+        Assert(shaderCore.Contains("StencilPass = INVERT", StringComparison.Ordinal),
+            "运行时 Shader 没有阻止重叠发片重复叠色");
         Assert(!Directory.Exists(Path.Combine(output, "tools")), "运行时复制不应包含开发工具");
     }
     finally

@@ -532,6 +532,12 @@
 #ifndef EF_HAIR_FACE_SHADOW_HAIR_WRITE_MASK
 #define EF_HAIR_FACE_SHADOW_HAIR_WRITE_MASK 2
 #endif
+#ifndef EF_HAIR_FACE_SHADOW_DRAWN_MASK
+#define EF_HAIR_FACE_SHADOW_DRAWN_MASK 4
+#endif
+#ifndef EF_HAIR_FACE_SHADOW_SINGLE_BLEND_MASK
+#define EF_HAIR_FACE_SHADOW_SINGLE_BLEND_MASK 5
+#endif
 #ifndef EF_HAIR_FACE_SHADOW_OFFSET_X
 // Danbaidong's 0.0045 Unity-unit offset, converted to this PMX's scale.
 #define EF_HAIR_FACE_SHADOW_OFFSET_X 0.055
@@ -2680,11 +2686,11 @@ float4 EfOutlinePS(EfOutlineVaryings input,
         StencilEnable = true; \
         StencilFunc = EQUAL; \
         StencilRef = EF_HAIR_FACE_SHADOW_FACE_REF; \
-        StencilMask = EF_HAIR_FACE_SHADOW_READ_MASK; \
-        StencilWriteMask = 0; \
+        StencilMask = EF_HAIR_FACE_SHADOW_SINGLE_BLEND_MASK; \
+        StencilWriteMask = EF_HAIR_FACE_SHADOW_DRAWN_MASK; \
         StencilFail = KEEP; \
         StencilZFail = KEEP; \
-        StencilPass = KEEP; \
+        StencilPass = INVERT; \
         VertexShader = compile vs_3_0 EfHairFaceShadowVS(); \
         PixelShader = compile ps_3_0 EfHairFaceShadowPS(useTextureValue); \
     }

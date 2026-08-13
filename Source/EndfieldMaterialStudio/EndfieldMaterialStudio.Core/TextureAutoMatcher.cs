@@ -75,14 +75,16 @@ public static class TextureAutoMatcher
             // PMX base texture.
             var authoredBase = SelectOtherTexBase(candidates, material);
             if (authoredBase is not null &&
-                (material.UsePmxBaseTexture ||
+                material.EffectiveBaseTextureMode != PmxBaseTextureMode.None &&
+                (material.EffectiveBaseTextureMode == PmxBaseTextureMode.Inherit ||
                  string.IsNullOrWhiteSpace(material.Textures.Base) ||
                  SamePath(material.Textures.Base, material.PmxBaseTexture)))
             {
                 material.Textures.Base = authoredBase;
+                material.BaseTextureMode = PmxBaseTextureMode.Override;
                 material.UsePmxBaseTexture = false;
             }
-            else
+            else if (material.EffectiveBaseTextureMode == PmxBaseTextureMode.Inherit)
             {
                 material.Textures.Base ??= material.PmxBaseTexture;
             }

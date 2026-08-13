@@ -152,11 +152,13 @@
                             </Grid.RowDefinitions>
                             <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="材质类型"/>
                             <ComboBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" x:Name="RoleCombo" SelectionChanged="RoleCombo_SelectionChanged" Margin="0,0,0,8"/>
-                            <CheckBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" x:Name="UsePmxBaseCheck" Content="基础色使用 PMX 原贴图"
-                                      Checked="UsePmxBase_Changed" Unchecked="UsePmxBase_Changed" Margin="0,2,0,9"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="基础贴图"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" x:Name="BaseTextureModeCombo"
+                                      DisplayMemberPath="Value" SelectedValuePath="Key"
+                                      SelectionChanged="BaseTextureMode_SelectionChanged" Margin="0,0,0,8"/>
                             <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Base"/>
                             <TextBox Grid.Row="2" Grid.Column="1" x:Name="BaseBox" Margin="0,0,6,6" TextChanged="TextureBox_Changed" Tag="Base"/>
-                            <Button Grid.Row="2" Grid.Column="2" Content="选择" Tag="Base" Click="BrowseTexture_Click" Margin="0,0,0,6"/>
+                            <Button Grid.Row="2" Grid.Column="2" x:Name="BaseBrowseButton" Content="选择" Tag="Base" Click="BrowseTexture_Click" Margin="0,0,0,6"/>
                             <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Normal / HN"/>
                             <TextBox Grid.Row="3" Grid.Column="1" x:Name="NormalBox" Margin="0,0,6,6" TextChanged="TextureBox_Changed" Tag="Normal"/>
                             <Button Grid.Row="3" Grid.Column="2" Content="选择" Tag="Normal" Click="BrowseTexture_Click" Margin="0,0,0,6"/>

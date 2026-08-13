@@ -79,7 +79,21 @@ public static class PmxReader
         var normalized = texturePath.Trim()
             .Replace('/', Path.DirectorySeparatorChar)
             .Replace('\\', Path.DirectorySeparatorChar);
-        var directPath = Path.GetFullPath(Path.Combine(modelDirectory, normalized));
+        string directPath;
+        try
+        {
+            directPath = Path.GetFullPath(Path.Combine(modelDirectory, normalized));
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return new PmxTextureResolution
+            {
+                DeclaredPath = texturePath,
+                DirectPath = normalized,
+                ResolvedPath = normalized,
+                Exists = false
+            };
+        }
         if (File.Exists(directPath))
         {
             return new PmxTextureResolution

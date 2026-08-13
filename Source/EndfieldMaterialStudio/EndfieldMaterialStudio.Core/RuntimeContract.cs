@@ -4,28 +4,49 @@ public static class RuntimeContract
 {
     private static readonly string[] FixedTextureNames =
     {
-        "Eff_MatCap_019.png",
-        "Eff_MatCap_019_manual_lod.png",
-        "PreIntegratedFGD_GGXDisneyDiffuse.png",
         "T_actor_common_face_01_hl_M.png",
         "T_actor_common_matcap_05_D.png",
         "T_actor_common_matcap_07_D.png",
-        "T_actor_common_cloth_lut_01_D.png",
-        "cloth_environment_current.dds",
-        Path.Combine("rain", "T_actor_common_rain_02_M.png"),
-        Path.Combine("rain", "rain_drops.png"),
-        Path.Combine("rain", "rain_drops_phase.png")
+        "T_actor_common_cloth_lut_01_D.png"
     };
 
     private static readonly string[] RequiredTopLevelFiles =
     {
+        "EndfieldHair_Final.fx",
+        "EndfieldFace_Final.fx",
+        "EndfieldFace_ChenQianyu.fx",
+        "EndfieldHair_ChenQianyu.fx",
+        "EndfieldCloth_ChenQianyu.fx",
+        "EndfieldSkin_ChenQianyu.fx",
+        "EndfieldEyeBase_ChenQianyu.fx",
+        "EndfieldEyeHighlight_ChenQianyu.fx",
+        "EndfieldEyeWhite_ChenQianyu.fx",
+        "EndfieldFacial_ChenQianyu.fx",
+        "EndfieldMouth_ChenQianyu.fx",
+        "EndfieldEyeOverlay_ChenQianyu.fx",
+        "EndfieldBrowOverlay_ChenQianyu.fx",
+        "EndfieldEyeThrough_Capture_ChenQianyu.fxsub",
         "EndfieldHairVisibility_Capture.fxsub",
-        "EndfieldEyeThrough_Capture.fxsub",
         "EndfieldEyeThrough_Mask.fxsub",
         "EndfieldEyeThrough.fx",
         "EndfieldEyeThrough.x",
-        "EndfieldPost.fx",
-        "EndfieldPost.x",
+        "ZMDshadow.x",
+        "ZMDshadow.fx",
+        "ZMDshadow_ShadowMap.fxsub",
+        "ZMDshadow_ViewportMap.fxsub",
+        "HgShadow_CFSUSM.fxh",
+        "HgShadow_CLSPSM.fxh",
+        "HgShadow_Header.fxh"
+    };
+
+    private static readonly string[] CopiedTopLevelFiles =
+    {
+        "EndfieldHair_Final.fx",
+        "EndfieldFace_Final.fx",
+        "EndfieldEyeThrough_Mask.fxsub",
+        "EndfieldHairVisibility_Capture.fxsub",
+        "EndfieldEyeThrough.fx",
+        "EndfieldEyeThrough.x",
         "ZMDshadow.x",
         "ZMDshadow.fx",
         "ZMDshadow_ShadowMap.fxsub",
@@ -33,10 +54,10 @@ public static class RuntimeContract
         "HgShadow_CFSUSM.fxh",
         "HgShadow_CLSPSM.fxh",
         "HgShadow_Header.fxh",
+        "EndfieldPost.fx",
+        "EndfieldPost.x",
         "JitteredSamp.png"
     };
-
-    private static readonly string[] CopiedTopLevelFiles = RequiredTopLevelFiles;
 
     public static IReadOnlyList<ValidationMessage> Validate(string runtimeRoot)
     {
@@ -110,8 +131,12 @@ public static class RuntimeContract
 
     private static string? FindFixedTexture(string runtimeRoot, string name)
     {
-        var candidate = Path.Combine(runtimeRoot, "textures", "common", name);
-        return File.Exists(candidate) ? candidate : null;
+        foreach (var directory in new[] { "common", "chen" })
+        {
+            var candidate = Path.Combine(runtimeRoot, "textures", directory, name);
+            if (File.Exists(candidate)) return candidate;
+        }
+        return null;
     }
 
     private static ValidationMessage Error(string code, string message) => new() { IsError = true, Code = code, Message = message };

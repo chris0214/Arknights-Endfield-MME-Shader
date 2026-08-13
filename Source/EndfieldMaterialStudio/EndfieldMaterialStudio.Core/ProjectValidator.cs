@@ -28,8 +28,11 @@ public static class ProjectValidator
                 messages.Add(Error("EYE_BROW", "眼透至少需要一个 BrowLash/眉毛睫毛材质。"));
         }
 
-        foreach (var material in project.Materials.Where(material => material.Enabled))
-            ValidateMaterial(material, messages);
+        foreach (var material in project.Materials)
+        {
+            ValidateBaseTextureChoice(material, messages);
+            if (material.Enabled) ValidateMaterial(material, messages);
+        }
         return messages;
     }
 
@@ -49,8 +52,18 @@ public static class ProjectValidator
             return messages;
         }
 
+        var assignments = project.Materials
+            .GroupBy(material => material.MaterialIndex)
+            .ToDictionary(group => group.Key, group => group.First());
         foreach (var dependency in PmxReader.ResolveTextureDependencies(model))
         {
+            if (dependency.Kind == PmxTextureKind.Base &&
+                assignments.TryGetValue(dependency.MaterialIndex, out var assignment) &&
+                assignment.EffectiveBaseTextureMode != PmxBaseTextureMode.Inherit)
+            {
+                continue;
+            }
+
             var resolution = dependency.Resolution;
             var kind = TextureKindName(dependency.Kind);
             if (resolution.UsedFallback)
@@ -61,9 +74,12 @@ public static class ProjectValidator
             }
             else if (!resolution.Exists)
             {
+                var detail = Directory.Exists(resolution.DirectPath)
+                    ? $"声明路径指向文件夹而不是贴图文件：{resolution.DeclaredPath}"
+                    : $"不存在：{resolution.DeclaredPath}";
                 messages.Add(Error(
                     "PMX_TEXTURE_MISSING",
-                    $"PMX 材质 #{dependency.MaterialIndex} {dependency.MaterialName} 的{kind}不存在：{resolution.DeclaredPath}"));
+                    $"PMX 材质 #{dependency.MaterialIndex} {dependency.MaterialName} 的{kind}{detail}。可将基础贴图模式改为“手动替换”或“无基础贴图”。"));
             }
         }
         return messages;
@@ -78,10 +94,29 @@ public static class ProjectValidator
         }
     }
 
+    private static void ValidateBaseTextureChoice(MaterialAssignment material, ICollection<ValidationMessage> messages)
+    {
+        if (material.EffectiveBaseTextureMode == PmxBaseTextureMode.Override &&
+            (string.IsNullOrWhiteSpace(material.Textures.Base) || !File.Exists(material.Textures.Base)))
+        {
+            messages.Add(Error("BASE_OVERRIDE", $"材质 #{material.MaterialIndex} {material.MaterialName} 选择了手动替换，但替换贴图不存在。"));
+        }
+        if (material.EffectiveBaseTextureMode == PmxBaseTextureMode.None &&
+            MaterialRequiresBase(material.Role))
+        {
+            messages.Add(Error("BASE_REQUIRED", $"材质 #{material.MaterialIndex} {material.MaterialName}（{material.Role}）需要基础贴图，不能选择“无基础贴图”。"));
+        }
+    }
+
     public static IEnumerable<(string Slot, string? Path)> RequiredTextures(MaterialAssignment material)
     {
         var textures = material.Textures;
-        var basePath = material.UsePmxBaseTexture ? material.PmxBaseTexture : textures.Base;
+        var basePath = material.EffectiveBaseTextureMode switch
+        {
+            PmxBaseTextureMode.Inherit => material.PmxBaseTexture,
+            PmxBaseTextureMode.Override => textures.Base,
+            _ => null
+        };
         switch (material.Role)
         {
             case MaterialRole.Face:
@@ -125,6 +160,11 @@ public static class ProjectValidator
                 break;
         }
     }
+
+    private static bool MaterialRequiresBase(MaterialRole role) => role is
+        MaterialRole.Face or MaterialRole.Hair or MaterialRole.Cloth or MaterialRole.Skin or
+        MaterialRole.Iris or MaterialRole.EyeHighlight or MaterialRole.EyeWhite or
+        MaterialRole.BrowLash or MaterialRole.Mouth or MaterialRole.EyeOverlay or MaterialRole.BrowOverlay;
 
     private static ValidationMessage Error(string code, string message) => new() { IsError = true, Code = code, Message = message };
     private static ValidationMessage Warning(string code, string message) => new() { IsError = false, Code = code, Message = message };

@@ -62,7 +62,8 @@ public static class MaterialMapWriter
                     FxPath = materialFxPaths.TryGetValue(material.MaterialIndex, out var fx)
                         ? RelativeFile(packageRoot, fx)
                         : null,
-                    UsePmxBaseTexture = material.UsePmxBaseTexture,
+                    BaseTextureMode = material.EffectiveBaseTextureMode,
+                    UsePmxBaseTexture = material.EffectiveBaseTextureMode == PmxBaseTextureMode.Inherit,
                     PmxBaseTexture = pmxBaseTextures.TryGetValue(material.MaterialIndex, out var pmxBase)
                         ? RelativeFile(packageRoot, pmxBase)
                         : null,
@@ -133,6 +134,7 @@ public sealed class MaterialMapEntry
     public MaterialRole Role { get; init; }
     public bool Enabled { get; init; }
     public string? FxPath { get; init; }
+    public PmxBaseTextureMode BaseTextureMode { get; init; }
     public bool UsePmxBaseTexture { get; init; }
     public string? PmxBaseTexture { get; init; }
     public TextureSlots Textures { get; init; } = new();

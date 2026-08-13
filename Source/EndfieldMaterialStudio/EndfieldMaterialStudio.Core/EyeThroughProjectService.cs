@@ -27,6 +27,7 @@ public static class EyeThroughProjectService
                 MaterialName = derived.Name,
                 EnglishName = derived.EnglishName,
                 Role = overlay.OverlayRole,
+                BaseTextureMode = source.EffectiveBaseTextureMode,
                 UsePmxBaseTexture = source.UsePmxBaseTexture,
                 PmxBaseTexture = source.PmxBaseTexture,
                 Textures = Clone(source.Textures)

@@ -31,6 +31,7 @@ public static class ProjectFactory
                 MaterialName = material.Name,
                 EnglishName = material.EnglishName,
                 Role = MaterialClassifier.Suggest(material),
+                BaseTextureMode = PmxBaseTextureMode.Inherit,
                 PmxBaseTexture = pmxBaseTexture,
                 Textures = new TextureSlots
                 {
@@ -59,7 +60,14 @@ public static class ProjectFactory
     public static void Normalize(StudioProject project)
     {
         project.Materials ??= new List<MaterialAssignment>();
-        foreach (var material in project.Materials) material.Textures ??= new TextureSlots();
+        foreach (var material in project.Materials)
+        {
+            material.Textures ??= new TextureSlots();
+            material.BaseTextureMode ??= material.UsePmxBaseTexture
+                ? PmxBaseTextureMode.Inherit
+                : PmxBaseTextureMode.Override;
+            material.UsePmxBaseTexture = material.BaseTextureMode == PmxBaseTextureMode.Inherit;
+        }
         RefreshPmxBaseTextures(project);
     }
 
@@ -74,7 +82,8 @@ public static class ProjectFactory
             if (!pmxMaterials.TryGetValue(material.MaterialIndex, out var pmxMaterial)) continue;
             var resolved = PmxReader.ResolveTexture(model.FilePath, pmxMaterial.TexturePath)?.ResolvedPath;
             material.PmxBaseTexture = resolved;
-            if (material.UsePmxBaseTexture) material.Textures.Base = resolved;
+            if (material.EffectiveBaseTextureMode == PmxBaseTextureMode.Inherit)
+                material.Textures.Base = resolved;
         }
     }
 

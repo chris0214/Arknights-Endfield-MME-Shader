@@ -24,7 +24,10 @@ public sealed class PackageBuilder
         {
             Directory.CreateDirectory(staging);
             generated.AddRange(RuntimeContract.CopyRuntime(project.RuntimeRoot, staging));
-            var packagedModelPath = CopyModelAndDependencies(modelPath, staging, outputRoot, generated);
+            ZmdAutoRoutePatcher.PatchFile(Path.Combine(staging, "ZMDshadow.fx"));
+            if (project.EnableEyeThrough)
+                EyeThroughAutoRoutePatcher.PatchFile(Path.Combine(staging, "EndfieldEyeThrough.fx"));
+            var packagedModelPath = CopyModelAndDependencies(project, modelPath, staging, outputRoot, generated);
             var packagedTextures = CopyTextures(project, staging, generated);
             const string bindingFileName = "endfield_generated_face_binding.cp932";
             var bindingPath = Path.Combine(staging, "internal", bindingFileName);
@@ -37,6 +40,7 @@ public sealed class PackageBuilder
                 var fxName = $"Material_{material.MaterialIndex:000}_{material.Role}.fx";
                 var fxPath = Path.Combine(staging, fxName);
                 File.WriteAllBytes(fxPath, FxTemplateEngine.BuildMaterialFx(
+                    project.RuntimeRoot,
                     material,
                     packagedTextures[material.MaterialIndex],
                     project.HeadBone,
@@ -51,19 +55,12 @@ public sealed class PackageBuilder
                 var iris = project.Materials.First(material => material.Role == MaterialRole.Iris);
                 capturePath = Path.Combine(staging, "EndfieldEyeThrough_Capture.fxsub");
                 File.WriteAllText(capturePath, FxTemplateEngine.BuildEyeCapture(
+                    project.RuntimeRoot,
                     project,
                     packagedTextures[iris.MaterialIndex],
-                    project.HeadBone), new UTF8Encoding(false));
+                    bindingFileName), new UTF8Encoding(false));
                 generated.Add(capturePath);
             }
-
-            var hairVisibilityCapturePath = Path.Combine(
-                staging, "EndfieldHairVisibility_Capture.fxsub");
-            File.WriteAllText(
-                hairVisibilityCapturePath,
-                FxTemplateEngine.BuildHairVisibilityCapture(project),
-                new UTF8Encoding(false));
-            generated.Add(hairVisibilityCapturePath);
 
             var finalMaterialFx = materialFx.ToDictionary(
                 pair => pair.Key,
@@ -87,7 +84,12 @@ public sealed class PackageBuilder
                 finalCapture));
             generated.Add(materialMapPath);
 
-            PreparePackagedProject(project, outputRoot, packagedModelPath, modelPath, packagedTextures);
+            PreparePackagedProject(
+                project,
+                outputRoot,
+                packagedModelPath,
+                Path.Combine(staging, "Model", Path.GetFileName(modelPath)),
+                packagedTextures);
             var projectPath = Path.Combine(staging, ProjectFactory.SanitizeProjectName(project.ProjectName) + ".endfieldstudio.json");
             ProjectFactory.Save(project, projectPath);
             generated.Add(projectPath);
@@ -120,6 +122,7 @@ public sealed class PackageBuilder
     }
 
     private static string CopyModelAndDependencies(
+        StudioProject project,
         string sourceModelPath,
         string staging,
         string outputRoot,
@@ -129,14 +132,49 @@ public sealed class PackageBuilder
         var stagingModelRoot = Path.Combine(staging, "Model");
         var stagingModelPath = Path.Combine(stagingModelRoot, Path.GetFileName(sourceModel));
         Directory.CreateDirectory(stagingModelRoot);
-        File.Copy(sourceModel, stagingModelPath, true);
-        generated.Add(stagingModelPath);
 
         var model = PmxReader.Read(sourceModel);
+        var assignments = project.Materials
+            .GroupBy(material => material.MaterialIndex)
+            .ToDictionary(group => group.Key, group => group.First());
         var copied = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var replacements = new Dictionary<int, string?>();
+        foreach (var material in project.Materials.OrderBy(material => material.MaterialIndex))
+        {
+            switch (material.EffectiveBaseTextureMode)
+            {
+                case PmxBaseTextureMode.Override:
+                {
+                    var source = material.Textures.Base;
+                    if (string.IsNullOrWhiteSpace(source) || !File.Exists(source))
+                        throw new FileNotFoundException($"材质 #{material.MaterialIndex} {material.MaterialName} 的手动基础贴图不存在。", source);
+                    var extension = Path.GetExtension(source).ToLowerInvariant();
+                    if (string.IsNullOrWhiteSpace(extension)) extension = ".png";
+                    var relative = Path.Combine("textures", $"endfield_m{material.MaterialIndex:000}_base{extension}");
+                    var destination = Path.Combine(stagingModelRoot, relative);
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                    File.Copy(source, destination, true);
+                    generated.Add(destination);
+                    copied.Add(Path.GetFullPath(destination));
+                    replacements[material.MaterialIndex] = relative.Replace('\\', '/');
+                    break;
+                }
+                case PmxBaseTextureMode.None:
+                    replacements[material.MaterialIndex] = null;
+                    break;
+            }
+        }
+
+        PmxTextureRewriter.Rewrite(sourceModel, stagingModelPath, replacements);
+        generated.Add(stagingModelPath);
+
         foreach (var material in model.Materials)
         {
-            CopyDependency(material.TexturePath, $"#{material.Index} {material.Name} 基础贴图");
+            if (!assignments.TryGetValue(material.Index, out var assignment) ||
+                assignment.EffectiveBaseTextureMode == PmxBaseTextureMode.Inherit)
+            {
+                CopyDependency(material.TexturePath, $"#{material.Index} {material.Name} 基础贴图");
+            }
             if (material.SphereMode != 0)
                 CopyDependency(material.SphereTexturePath, $"#{material.Index} {material.Name} 球面贴图");
             CopyDependency(material.ToonTexturePath, $"#{material.Index} {material.Name} Toon 贴图");
@@ -179,10 +217,10 @@ public sealed class PackageBuilder
         StudioProject project,
         string outputRoot,
         string packagedModelPath,
-        string sourceModelPath,
+        string packagedModelReadPath,
         IReadOnlyDictionary<int, TextureSlots> packagedTextures)
     {
-        var sourceModel = PmxReader.Read(sourceModelPath);
+        var sourceModel = PmxReader.Read(packagedModelReadPath);
         project.PmxPath = packagedModelPath;
         project.RuntimeRoot = outputRoot;
         foreach (var material in project.Materials)
@@ -191,8 +229,13 @@ public sealed class PackageBuilder
             material.PmxBaseTexture = sourceMaterial is null
                 ? null
                 : PmxReader.ResolveTextureFilePath(packagedModelPath, sourceMaterial.TexturePath);
+            material.BaseTextureMode = PmxBaseTextureMode.Inherit;
+            material.UsePmxBaseTexture = true;
             if (packagedTextures.TryGetValue(material.MaterialIndex, out var textures))
+            {
                 material.Textures = MakeAbsolute(textures, outputRoot);
+                material.Textures.Base = material.PmxBaseTexture;
+            }
         }
     }
 
@@ -224,7 +267,12 @@ public sealed class PackageBuilder
         {
             var source = material.Textures;
             var packaged = new TextureSlots();
-            packaged.Base = Copy("base", material.UsePmxBaseTexture ? material.PmxBaseTexture : source.Base);
+            packaged.Base = Copy("base", material.EffectiveBaseTextureMode switch
+            {
+                PmxBaseTextureMode.Inherit => material.PmxBaseTexture,
+                PmxBaseTextureMode.Override => source.Base,
+                _ => null
+            });
             packaged.Normal = Copy("normal", source.Normal);
             packaged.Property = Copy("property", source.Property);
             packaged.Rd = Copy("rd", source.Rd);
@@ -322,6 +370,7 @@ public sealed class PackageBuilder
             MaterialName = material.MaterialName,
             EnglishName = material.EnglishName,
             Role = material.Role,
+            BaseTextureMode = material.EffectiveBaseTextureMode,
             UsePmxBaseTexture = material.UsePmxBaseTexture,
             PmxBaseTexture = material.PmxBaseTexture,
             Textures = Clone(material.Textures)

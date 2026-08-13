@@ -10,6 +10,7 @@ foreach (var message in RuntimeContract.Validate(runtime)) Console.WriteLine(mes
 Assert(RuntimeContract.Validate(runtime).All(message => !message.IsError), "EndfieldMME 运行时不完整");
 RunTemplateSmokeTests();
 RunRuntimeCopySmokeTest();
+RunPmxBaseTextureModeTests();
 Console.WriteLine("PORTABLE_TESTS_PASSED");
 
 var pmx = Environment.GetEnvironmentVariable("ENDFIELD_TEST_PMX");
@@ -80,6 +81,7 @@ void RunTemplateSmokeTests()
     foreach (var role in roles)
     {
         var bytes = FxTemplateEngine.BuildMaterialFx(
+            runtime,
             new MaterialAssignment { MaterialIndex = (int)role, MaterialName = role.ToString(), Role = role },
             slots,
             "頭",
@@ -103,15 +105,130 @@ void RunTemplateSmokeTests()
             Material(8, MaterialRole.BrowOverlay)
         }
     };
-    AssertGeneratedText(FxTemplateEngine.BuildEyeCapture(captureProject, slots, captureProject.HeadBone), "EyeThrough Capture");
-    var hairVisibility = FxTemplateEngine.BuildHairVisibilityCapture(captureProject);
-    AssertGeneratedText(hairVisibility, "Hair Visibility Capture");
-    Assert(hairVisibility.Contains("#define EF_HAIR_VISIBILITY_SUBSETS \"5\"", StringComparison.Ordinal),
-        "Hair Visibility Capture 没有使用 Hair 材质索引");
-    Assert(hairVisibility.Contains(
-            "#define EF_HAIR_VISIBILITY_FACE_OCCLUDER_SUBSETS \"0,1,3\"",
-            StringComparison.Ordinal),
-        "Hair Visibility Capture 没有使用 Face/Iris/EyeWhite 遮挡索引");
+    AssertGeneratedText(FxTemplateEngine.BuildEyeCapture(runtime, captureProject, slots, "endfield_generated_face_binding.cp932"), "EyeThrough Capture");
+}
+
+void RunPmxBaseTextureModeTests()
+{
+    var root = Path.Combine(Path.GetTempPath(), "EndfieldPmxBaseMode_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        Directory.CreateDirectory(Path.Combine(root, "textures"));
+        var source = Path.Combine(root, "source.pmx");
+        WriteMinimalPmx(source, "textures", "textures");
+        var originalBytes = File.ReadAllBytes(source);
+        var replacement = Path.Combine(root, "replacement.png");
+        File.WriteAllBytes(replacement, new byte[] { 0x89, 0x50, 0x4e, 0x47 });
+
+        var project = new StudioProject
+        {
+            PmxPath = source,
+            Materials = new List<MaterialAssignment>
+            {
+                new()
+                {
+                    MaterialIndex = 0,
+                    MaterialName = "Override",
+                    Role = MaterialRole.None,
+                    BaseTextureMode = PmxBaseTextureMode.Override,
+                    UsePmxBaseTexture = false,
+                    Textures = new TextureSlots { Base = replacement }
+                },
+                new()
+                {
+                    MaterialIndex = 1,
+                    MaterialName = "None",
+                    Role = MaterialRole.None,
+                    BaseTextureMode = PmxBaseTextureMode.None,
+                    UsePmxBaseTexture = false
+                }
+            }
+        };
+
+        Assert(ProjectValidator.ValidatePmxDependencies(project).All(message => !message.IsError),
+            "Override/None 不应被无效的原始 PMX 基础贴图阻塞");
+
+        project.Materials[0].BaseTextureMode = PmxBaseTextureMode.Inherit;
+        Assert(ProjectValidator.ValidatePmxDependencies(project).Any(message => message.IsError),
+            "Inherit 应报告指向文件夹的 PMX 基础贴图");
+        project.Materials[0].BaseTextureMode = PmxBaseTextureMode.Override;
+
+        var rewritten = Path.Combine(root, "rewritten.pmx");
+        PmxTextureRewriter.Rewrite(rewritten == source ? throw new InvalidOperationException() : source, rewritten,
+            new Dictionary<int, string?>
+            {
+                [0] = "textures/endfield_m000_base.png",
+                [1] = null
+            });
+        var rewrittenModel = PmxReader.Read(rewritten);
+        Assert(rewrittenModel.Materials[0].TexturePath == "textures/endfield_m000_base.png",
+            "Override 没有写入输出 PMX 的贴图索引");
+        Assert(rewrittenModel.Materials[1].TexturePath is null,
+            "None 没有把输出 PMX 的基础贴图索引设为 -1");
+        Assert(File.ReadAllBytes(source).SequenceEqual(originalBytes), "PMX 重写修改了源模型");
+
+        var oldProjectPath = Path.Combine(root, "legacy.json");
+        File.WriteAllText(oldProjectPath,
+            "{\"PmxPath\":\"\",\"Materials\":[{\"MaterialIndex\":0,\"UsePmxBaseTexture\":false,\"Textures\":{}}]}");
+        var migrated = ProjectFactory.Load(oldProjectPath);
+        Assert(migrated.Materials[0].EffectiveBaseTextureMode == PmxBaseTextureMode.Override,
+            "旧工程 UsePmxBaseTexture=false 没有迁移为 Override");
+
+        project.RuntimeRoot = runtime;
+        project.OutputDirectory = Path.Combine(root, "output");
+        project.ProjectName = "BaseModePortable";
+        project.EnableEyeThrough = false;
+        project.GenerateDerivedPmx = false;
+        var package = new PackageBuilder().Build(project);
+        var packaged = PmxReader.Read(package.ModelPath);
+        Assert(packaged.Materials[0].TexturePath == "textures/endfield_m000_base.png",
+            "角色包 PMX 没有保留 Override 路径");
+        Assert(packaged.Materials[1].TexturePath is null, "角色包 PMX 没有保留 None 模式");
+        Assert(File.Exists(Path.Combine(Path.GetDirectoryName(package.ModelPath)!, "textures", "endfield_m000_base.png")),
+            "角色包没有复制手动基础贴图");
+    }
+    finally
+    {
+        if (Directory.Exists(root)) Directory.Delete(root, true);
+    }
+}
+
+static void WriteMinimalPmx(string path, params string[] baseTextures)
+{
+    using var stream = File.Create(path);
+    using var writer = new BinaryWriter(stream, new UTF8Encoding(false), leaveOpen: true);
+    writer.Write(Encoding.ASCII.GetBytes("PMX "));
+    writer.Write(2.0f);
+    writer.Write((byte)8);
+    writer.Write(new byte[] { 1, 0, 1, 1, 1, 1, 1, 1 });
+    for (var i = 0; i < 4; i++) WriteText(writer, string.Empty);
+    writer.Write(0); // vertices
+    writer.Write(0); // surface indices
+    writer.Write(baseTextures.Length);
+    foreach (var texture in baseTextures) WriteText(writer, texture);
+    writer.Write(baseTextures.Length);
+    for (var index = 0; index < baseTextures.Length; index++)
+    {
+        WriteText(writer, $"material_{index}");
+        WriteText(writer, string.Empty);
+        writer.Write(new byte[16 + 12 + 4 + 12 + 1 + 16 + 4]);
+        writer.Write(unchecked((sbyte)index));
+        writer.Write(unchecked((sbyte)-1));
+        writer.Write((byte)0);
+        writer.Write((byte)1);
+        writer.Write((byte)0);
+        WriteText(writer, string.Empty);
+        writer.Write(0);
+    }
+    writer.Write(0); // bones
+
+    static void WriteText(BinaryWriter writer, string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        writer.Write(bytes.Length);
+        writer.Write(bytes);
+    }
 }
 
 void RunRuntimeCopySmokeTest()

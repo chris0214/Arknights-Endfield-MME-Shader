@@ -12,6 +12,7 @@ public static class FxTemplateEngine
     static FxTemplateEngine() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
     public static byte[] BuildMaterialFx(
+        string runtimeRoot,
         MaterialAssignment material,
         TextureSlots packaged,
         string headBone,
@@ -19,17 +20,17 @@ public static class FxTemplateEngine
     {
         var text = material.Role switch
         {
-            MaterialRole.Face => BuildFace(packaged, bindingFileName),
-            MaterialRole.Hair => BuildHair(packaged),
-            MaterialRole.Cloth => BuildCloth(packaged),
-            MaterialRole.Skin => BuildSkin(packaged),
-            MaterialRole.Iris => BuildIris(packaged, headBone),
-            MaterialRole.EyeHighlight => BuildEyeHighlight(packaged, bindingFileName),
-            MaterialRole.EyeWhite => BuildSimpleBase("EndfieldEyeWhite_Template.fx", "__EF_FACIAL_BASE_TEXTURE__", packaged),
-            MaterialRole.BrowLash => BuildFacial("EndfieldBrowLash_Template.fx", packaged, headBone),
-            MaterialRole.Mouth => BuildFacial("EndfieldMouth_Template.fx", packaged, headBone),
-            MaterialRole.EyeOverlay => BuildFacial("EndfieldEyeOverlay_Template.fx", packaged, headBone),
-            MaterialRole.BrowOverlay => BuildFacial("EndfieldBrowOverlay_Template.fx", packaged, headBone),
+            MaterialRole.Face => BuildFace(runtimeRoot, packaged, bindingFileName),
+            MaterialRole.Hair => BuildHair(runtimeRoot, packaged),
+            MaterialRole.Cloth => BuildCloth(runtimeRoot, packaged),
+            MaterialRole.Skin => BuildSkin(runtimeRoot, packaged),
+            MaterialRole.Iris => BuildIris(runtimeRoot, packaged, headBone),
+            MaterialRole.EyeHighlight => BuildEyeHighlight(runtimeRoot, packaged, bindingFileName),
+            MaterialRole.EyeWhite => BuildSimpleBase(runtimeRoot, "EndfieldEyeWhite_ChenQianyu.fx", packaged),
+            MaterialRole.BrowLash => BuildFacial(runtimeRoot, "EndfieldFacial_ChenQianyu.fx", packaged, headBone),
+            MaterialRole.Mouth => BuildFacial(runtimeRoot, "EndfieldMouth_ChenQianyu.fx", packaged, headBone),
+            MaterialRole.EyeOverlay => BuildFacial(runtimeRoot, "EndfieldEyeOverlay_ChenQianyu.fx", packaged, headBone),
+            MaterialRole.BrowOverlay => BuildFacial(runtimeRoot, "EndfieldBrowOverlay_ChenQianyu.fx", packaged, headBone),
             MaterialRole.Hidden => "#include \"internal/endfield_hidden.hlsl\"\r\n",
             _ => throw new InvalidOperationException($"材质角色 {material.Role} 不生成 FX。")
         };
@@ -46,12 +47,12 @@ public static class FxTemplateEngine
     }
 
     public static string BuildEyeCapture(
+        string runtimeRoot,
         StudioProject project,
         TextureSlots irisPackaged,
-        string headBone)
+        string bindingFileName)
     {
-        var text = ReadTemplate("EndfieldEyeThrough_Capture_Template.fxsub");
-        text = ReplaceDefineString(text, "EF_EYE_CAPTURE_HEAD_BONE", EscapeQuoted(headBone));
+        var text = ReadTemplate(Path.Combine(runtimeRoot, "EndfieldEyeThrough_Capture_ChenQianyu.fxsub"));
         text = ReplaceDefineString(text, "EF_EYE_CAPTURE_EYE_SUBSETS", Subsets(project, MaterialRole.Iris));
         text = ReplaceDefineString(text, "EF_EYE_CAPTURE_HIGHLIGHT_SUBSETS", Subsets(project, MaterialRole.EyeHighlight));
         text = ReplaceDefineString(text, "EF_EYE_CAPTURE_SCLERA_SUBSETS", Subsets(project, MaterialRole.EyeWhite));
@@ -59,44 +60,36 @@ public static class FxTemplateEngine
         text = ReplaceDefineString(text, "EF_EYE_CAPTURE_IGNORED_SUBSETS", IgnoredSubsets(project));
         text = ReplaceDefineString(text, "EF_EYE_CAPTURE_HAIR_DEPTH_SUBSETS", HairDepthSubsets(project));
         text = ReplaceDefineString(text, "EF_EYE_CAPTURE_SHIFTED_SUBSETS", Subsets(project, MaterialRole.FaceProxy, MaterialRole.EyeOverlay, MaterialRole.BrowOverlay));
-        text = InsertBeforeInclude(text, "internal/endfield_eye_through_capture_core.fxsub",
-            $"#define EF_EYE_CAPTURE_IRIS_TEXTURE_RESOURCE \"{Required(irisPackaged.Base, "Iris Base")}\"\r\n" +
+        text = InsertBeforeInclude(text, "internal/endfield_eye.hlsl",
             $"#define EF_EYE_IRIS_MATCAP05_TEXTURE \"{IrisMatcap05}\"\r\n" +
-            $"#define EF_EYE_IRIS_MATCAP07_TEXTURE \"{IrisMatcap07}\"\r\n" +
+            $"#define EF_EYE_IRIS_MATCAP07_TEXTURE \"{IrisMatcap07}\"\r\n");
+        text = InsertBeforeInclude(text, "internal/endfield_eye_highlight.hlsl",
             $"#define EF_EYE_HL_TEXTURE_RESOURCE \"{Required(irisPackaged.Base, "Iris Base")}\"\r\n");
+        text = text.Replace("internal/chen_qianyu_face_binding.cp932", $"internal/{bindingFileName}", StringComparison.Ordinal);
+        text = text.Replace("textures/chen/T_actor_chen_iris_01_D.png", Required(irisPackaged.Base, "Iris Base"), StringComparison.Ordinal);
         return text;
     }
 
-    public static string BuildHairVisibilityCapture(StudioProject project)
+    private static string BuildFace(string runtimeRoot, TextureSlots textures, string bindingFileName)
     {
-        var text = ReadTemplate("EndfieldHairVisibility_Capture_Template.fxsub");
-        text = ReplaceDefineString(text, "EF_HAIR_VISIBILITY_SUBSETS",
-            Subsets(project, MaterialRole.Hair));
-        text = ReplaceDefineString(text, "EF_HAIR_VISIBILITY_FACE_OCCLUDER_SUBSETS",
-            Subsets(project, MaterialRole.Face, MaterialRole.Iris, MaterialRole.EyeWhite));
-        return text;
-    }
-
-    private static string BuildFace(TextureSlots textures, string bindingFileName)
-    {
-        var entry = ReadTemplate("EndfieldFace_Template.fx");
-        entry = entry.Replace("__EF_FACE_BINDING__", bindingFileName, StringComparison.Ordinal);
+        var entry = ReadTemplate(Path.Combine(runtimeRoot, "EndfieldFace_ChenQianyu.fx"));
+        entry = entry.Replace("internal/chen_qianyu_face_binding.cp932", $"internal/{bindingFileName}", StringComparison.Ordinal);
         entry = ReplaceResources(entry, new Dictionary<string, string>
         {
-            ["__EF_FACE_SDF_TEXTURE__"] = Required(textures.Sdf, "Face SDF"),
-            ["__EF_FACE_COLOR_MASK_TEXTURE__"] = Required(textures.ColorMask, "Face ColorMask"),
-            ["__EF_FACE_RD_TEXTURE__"] = Required(textures.Rd, "Face RD"),
-            ["__EF_FACE_LUT_TEXTURE__"] = Required(textures.Lut, "Face LUT"),
-            ["__EF_FACE_ST_TEXTURE__"] = Required(textures.St, "Face ST")
+            ["textures/chen/T_actor_common_female_face_01_SDF.png"] = Required(textures.Sdf, "Face SDF"),
+            ["textures/chen/T_actor_common_female_face_01_cm_M.png"] = Required(textures.ColorMask, "Face ColorMask"),
+            ["textures/chen/T_actor_common_face_01_RD.png"] = Required(textures.Rd, "Face RD"),
+            ["textures/chen/T_actor_common_femaleskincolor02_lut_D.png"] = Required(textures.Lut, "Face LUT"),
+            ["textures/chen/T_actor_common_female_face_01_ST.png"] = Required(textures.St, "Face ST")
         });
 
         const string include = "#include \"EndfieldFace_Final.fx\"";
         var includeIndex = entry.IndexOf(include, StringComparison.Ordinal);
         if (includeIndex < 0) throw new InvalidDataException("Face 模板缺少 EndfieldFace_Final.fx 入口。");
 
-        var final = ReadTemplate("EndfieldFace_Final.fx");
+        var final = ReadTemplate(Path.Combine(runtimeRoot, "EndfieldFace_Final.fx"));
         final = final.Replace(
-            "__EF_FACE_BASE_TEXTURE__",
+            "textures/chen/T_actor_chen_face_01_D.png",
             Required(textures.Base, "Face Base"),
             StringComparison.Ordinal);
         var lipSpecular = string.IsNullOrWhiteSpace(textures.LipSpecular)
@@ -107,69 +100,76 @@ public static class FxTemplateEngine
                final;
     }
 
-    private static string BuildIris(TextureSlots textures, string headBone)
+    private static string BuildIris(string runtimeRoot, TextureSlots textures, string headBone)
     {
-        var text = BuildFacial("EndfieldEye_Template.fx", textures, headBone);
+        var text = BuildFacial(runtimeRoot, "EndfieldEyeBase_ChenQianyu.fx", textures, headBone);
         return $"#define EF_EYE_IRIS_MATCAP05_TEXTURE \"{IrisMatcap05}\"\r\n" +
                $"#define EF_EYE_IRIS_MATCAP07_TEXTURE \"{IrisMatcap07}\"\r\n" +
                text;
     }
 
-    private static string BuildHair(TextureSlots textures)
+    private static string BuildHair(string runtimeRoot, TextureSlots textures)
     {
-        var entry = ReadTemplate("EndfieldHair_Template.fx");
+        var entry = ReadTemplate(Path.Combine(runtimeRoot, "EndfieldHair_ChenQianyu.fx"));
         var include = "#include \"EndfieldHair_Final.fx\"";
         var prefix = entry[..entry.IndexOf(include, StringComparison.Ordinal)];
-        var final = ReadTemplate("EndfieldHair_Final.fx");
+        var final = ReadTemplate(Path.Combine(runtimeRoot, "EndfieldHair_Final.fx"));
         final = ReplaceResources(final, new Dictionary<string, string>
         {
-            ["__EF_HAIR_BASE_TEXTURE__"] = Required(textures.Base, "Hair Base"),
-            ["__EF_HAIR_NORMAL_TEXTURE__"] = Required(textures.Normal, "Hair Normal"),
-            ["__EF_HAIR_PROPERTY_TEXTURE__"] = Required(textures.Property, "Hair Property"),
-            ["__EF_HAIR_RD_TEXTURE__"] = Required(textures.Rd, "Hair RD"),
-            ["__EF_HAIR_ST_TEXTURE__"] = Required(textures.St, "Hair ST"),
-            ["__EF_HAIR_LINE_TEXTURE__"] = Required(textures.HairLine, "HairLine"),
-            ["__EF_HAIR_RS_TEXTURE__"] = Required(textures.Rs, "Hair RS")
+            ["textures/chen/T_actor_chen_hair_01_D.png"] = Required(textures.Base, "Hair Base"),
+            ["textures/chen/T_actor_chen_hair_01_HN.png"] = Required(textures.Normal, "Hair Normal"),
+            ["textures/chen/T_actor_chen_hair_01_P.png"] = Required(textures.Property, "Hair Property"),
+            ["textures/chen/T_actor_common_hair_01_RD.png"] = Required(textures.Rd, "Hair RD"),
+            ["textures/chen/T_actor_common_hairst_01_ST.png"] = Required(textures.St, "Hair ST"),
+            ["textures/chen/T_actor_common_hairline_03_M.png"] = Required(textures.HairLine, "HairLine"),
+            ["textures/chen/T_actor_common_hair_08_RS.png"] = Required(textures.Rs, "Hair RS")
         });
         return prefix + final;
     }
 
-    private static string BuildCloth(TextureSlots textures) => ReplaceResources(
-        ReadTemplate("EndfieldCloth_Template.fx"),
+    private static string BuildCloth(string runtimeRoot, TextureSlots textures) => ReplaceResources(
+        ReadTemplate(Path.Combine(runtimeRoot, "EndfieldCloth_ChenQianyu.fx")),
         new Dictionary<string, string>
         {
-            ["__EF_CLOTH_BASE_TEXTURE__"] = Required(textures.Base, "Cloth Base"),
-            ["__EF_CLOTH_NORMAL_TEXTURE__"] = Required(textures.Normal, "Cloth Normal"),
-            ["__EF_CLOTH_PROPERTY_TEXTURE__"] = Required(textures.Property, "Cloth Property"),
-            ["__EF_CLOTH_RD_TEXTURE__"] = Required(textures.Rd, "Cloth RD"),
-            ["__EF_CLOTH_LUT_TEXTURE__"] = Required(textures.Lut, "Cloth LUT"),
-            ["__EF_CLOTH_RS_TEXTURE__"] = Required(textures.Rs, "Cloth RS")
+            ["textures/chen/T_actor_chen_cloth_01_D.png"] = Required(textures.Base, "Cloth Base"),
+            ["textures/chen/T_actor_chen_cloth_01_N.png"] = Required(textures.Normal, "Cloth Normal"),
+            ["textures/chen/T_actor_chen_cloth_01_P.png"] = Required(textures.Property, "Cloth Property"),
+            ["textures/chen/T_actor_common_cloth_04_RD.png"] = Required(textures.Rd, "Cloth RD"),
+            ["textures/chen/T_actor_common_cloth_lut_01_D.png"] = Required(textures.Lut, "Cloth LUT"),
+            ["textures/chen/T_actor_common_cloth_04_RS.png"] = Required(textures.Rs, "Cloth RS")
         });
 
-    private static string BuildSkin(TextureSlots textures) => ReplaceResources(
-        ReadTemplate("EndfieldSkin_Template.fx"),
+    private static string BuildSkin(string runtimeRoot, TextureSlots textures) => ReplaceResources(
+        ReadTemplate(Path.Combine(runtimeRoot, "EndfieldSkin_ChenQianyu.fx")),
         new Dictionary<string, string>
         {
-            ["__EF_SKIN_BASE_TEXTURE__"] = Required(textures.Base, "Skin Base"),
-            ["__EF_SKIN_RD_TEXTURE__"] = Required(textures.Rd, "Skin RD"),
-            ["__EF_SKIN_LUT_TEXTURE__"] = Required(textures.Lut, "Skin LUT")
+            ["textures/chen/T_actor_chen_body_01_D.png"] = Required(textures.Base, "Skin Base"),
+            ["textures/chen/T_actor_common_body_01_RD.png"] = Required(textures.Rd, "Skin RD"),
+            ["textures/chen/T_actor_common_femaleskincolor02_lut_D.png"] = Required(textures.Lut, "Skin LUT")
         });
 
-    private static string BuildEyeHighlight(TextureSlots textures, string bindingFileName)
+    private static string BuildEyeHighlight(string runtimeRoot, TextureSlots textures, string bindingFileName)
     {
-        var text = BuildSimpleBase("EndfieldEyeHighlight_Template.fx", "__EF_EYE_HIGHLIGHT_TEXTURE__", textures);
-        return text.Replace("__EF_FACE_BINDING__", bindingFileName, StringComparison.Ordinal);
+        var text = BuildSimpleBase(runtimeRoot, "EndfieldEyeHighlight_ChenQianyu.fx", textures);
+        return text.Replace("internal/chen_qianyu_face_binding.cp932", $"internal/{bindingFileName}", StringComparison.Ordinal);
     }
 
-    private static string BuildSimpleBase(string templateName, string textureToken, TextureSlots textures)
+    private static string BuildSimpleBase(string runtimeRoot, string templateName, TextureSlots textures)
     {
-        var text = ReadTemplate(templateName);
-        return text.Replace(textureToken, Required(textures.Base, $"{templateName} Base"), StringComparison.Ordinal);
+        var text = ReadTemplate(Path.Combine(runtimeRoot, templateName));
+        var oldPath = templateName switch
+        {
+            "EndfieldEyeBase_ChenQianyu.fx" or
+            "EndfieldEyeHighlight_ChenQianyu.fx" or
+            "EndfieldEyeOverlay_ChenQianyu.fx" => "textures/chen/T_actor_chen_iris_01_D.png",
+            _ => "textures/chen/T_actor_chen_face_01_D.png"
+        };
+        return RemoveCharacterSpecificComments(text.Replace(oldPath, Required(textures.Base, $"{templateName} Base"), StringComparison.Ordinal));
     }
 
-    private static string BuildFacial(string templateName, TextureSlots textures, string headBone)
+    private static string BuildFacial(string runtimeRoot, string templateName, TextureSlots textures, string headBone)
     {
-        var text = BuildSimpleBase(templateName, "__EF_FACIAL_BASE_TEXTURE__", textures);
+        var text = BuildSimpleBase(runtimeRoot, templateName, textures);
         return Regex.Replace(text, "string\\s+item\\s*=\\s*\"[^\"]*\"\\s*;", $"string item = \"{EscapeQuoted(headBone)}\";", RegexOptions.CultureInvariant);
     }
 
@@ -225,17 +225,19 @@ public static class FxTemplateEngine
     private static string ReplaceResources(string text, IReadOnlyDictionary<string, string> replacements)
     {
         foreach (var pair in replacements) text = text.Replace(pair.Key, pair.Value.Replace('\\', '/'), StringComparison.Ordinal);
-        return text;
+        return RemoveCharacterSpecificComments(text);
     }
 
-    private static string ReadTemplate(string name)
+    private static string RemoveCharacterSpecificComments(string text) => string.Join("\r\n", text
+        .Replace("\r\n", "\n", StringComparison.Ordinal)
+        .Split('\n')
+        .Where(line => !(line.TrimStart().StartsWith("//", StringComparison.Ordinal) &&
+                         (line.Contains("ChenQianyu", StringComparison.OrdinalIgnoreCase) ||
+                          line.Contains("Chen Qianyu", StringComparison.OrdinalIgnoreCase)))));
+
+    private static string ReadTemplate(string path)
     {
-        var resourceName = $"EndfieldMaterialStudio.Core.Templates.{name}";
-        using var stream = typeof(FxTemplateEngine).Assembly.GetManifestResourceStream(resourceName)
-            ?? throw new FileNotFoundException($"找不到内嵌材质模板：{name}", resourceName);
-        using var memory = new MemoryStream();
-        stream.CopyTo(memory);
-        var bytes = memory.ToArray();
+        var bytes = File.ReadAllBytes(path);
         try
         {
             return new UTF8Encoding(false, true).GetString(bytes);

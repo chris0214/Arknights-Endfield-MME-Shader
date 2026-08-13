@@ -18,6 +18,12 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         RoleCombo.ItemsSource = Enum.GetValues<MaterialRole>();
+        BaseTextureModeCombo.ItemsSource = new[]
+        {
+            new KeyValuePair<PmxBaseTextureMode, string>(PmxBaseTextureMode.Inherit, "沿用 PMX 原贴图"),
+            new KeyValuePair<PmxBaseTextureMode, string>(PmxBaseTextureMode.Override, "手动替换（写入输出 PMX）"),
+            new KeyValuePair<PmxBaseTextureMode, string>(PmxBaseTextureMode.None, "无基础贴图")
+        };
         MaterialsGrid.ItemsSource = _materials;
         RuntimePathBox.Text = FindRuntimeRoot() ?? string.Empty;
         MaterialEditor.IsEnabled = false;
@@ -201,11 +207,16 @@ public partial class MainWindow : Window
         SelectedMaterialHint.Text = $"#{_selectedMaterial.MaterialIndex} · {role}";
     }
 
-    private void UsePmxBase_Changed(object sender, RoutedEventArgs e)
+    private void BaseTextureMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_updatingEditor || _selectedMaterial is null) return;
-        _selectedMaterial.UsePmxBaseTexture = UsePmxBaseCheck.IsChecked == true;
-        BaseBox.IsEnabled = !_selectedMaterial.UsePmxBaseTexture;
+        if (_updatingEditor || _selectedMaterial is null ||
+            BaseTextureModeCombo.SelectedValue is not PmxBaseTextureMode mode) return;
+        _selectedMaterial.BaseTextureMode = mode;
+        _selectedMaterial.UsePmxBaseTexture = mode == PmxBaseTextureMode.Inherit;
+        if (mode == PmxBaseTextureMode.Inherit)
+            _selectedMaterial.Textures.Base = _selectedMaterial.PmxBaseTexture;
+        UpdateBaseTextureControls(mode);
+        MaterialsGrid.Items.Refresh();
     }
 
     private void TextureBox_Changed(object sender, TextChangedEventArgs e)
@@ -224,6 +235,11 @@ public partial class MainWindow : Window
         };
         if (dialog.ShowDialog() != true) return;
         SetTexture(_selectedMaterial.Textures, slot, dialog.FileName);
+        if (slot == "Base")
+        {
+            _selectedMaterial.BaseTextureMode = PmxBaseTextureMode.Override;
+            _selectedMaterial.UsePmxBaseTexture = false;
+        }
         RefreshEditor();
     }
 
@@ -290,10 +306,17 @@ public partial class MainWindow : Window
             }
             var material = _selectedMaterial;
             SelectedMaterialTitle.Text = material.MaterialName;
-            SelectedMaterialHint.Text = $"#{material.MaterialIndex} · {material.Role} · PMX Base: {material.PmxBaseTexture ?? "无"}";
+            var pmxBaseState = material.PmxBaseTexture switch
+            {
+                null or "" => "无",
+                var path when File.Exists(path) => path,
+                var path when Directory.Exists(path) => $"{path}（这是文件夹，不能作为贴图）",
+                var path => $"{path}（文件不存在）"
+            };
+            SelectedMaterialHint.Text = $"#{material.MaterialIndex} · {material.Role} · PMX Base: {pmxBaseState}";
             RoleCombo.SelectedItem = material.Role;
-            UsePmxBaseCheck.IsChecked = material.UsePmxBaseTexture;
-            BaseBox.IsEnabled = !material.UsePmxBaseTexture;
+            BaseTextureModeCombo.SelectedValue = material.EffectiveBaseTextureMode;
+            UpdateBaseTextureControls(material.EffectiveBaseTextureMode);
             BaseBox.Text = material.Textures.Base ?? string.Empty;
             NormalBox.Text = material.Textures.Normal ?? string.Empty;
             PropertyBox.Text = material.Textures.Property ?? string.Empty;
@@ -310,6 +333,13 @@ public partial class MainWindow : Window
         {
             _updatingEditor = false;
         }
+    }
+
+    private void UpdateBaseTextureControls(PmxBaseTextureMode mode)
+    {
+        var canEdit = mode == PmxBaseTextureMode.Override;
+        BaseBox.IsEnabled = canEdit;
+        BaseBrowseButton.IsEnabled = canEdit;
     }
 
     private void WriteValidation()
@@ -348,12 +378,12 @@ public partial class MainWindow : Window
         {
             foreach (var candidate in new[]
             {
+                Path.Combine(current.FullName, "ShaderTemplate"),
                 Path.Combine(current.FullName, "EndfieldMME"),
                 current.FullName
             })
             {
-                if (File.Exists(Path.Combine(candidate, "ZMDshadow.fx")) &&
-                    File.Exists(Path.Combine(candidate, "EndfieldEyeThrough.fx")) &&
+                if (File.Exists(Path.Combine(candidate, "EndfieldHair_Final.fx")) &&
                     File.Exists(Path.Combine(candidate, "internal", "endfield_shader.hlsl"))) return candidate;
             }
             current = current.Parent;

@@ -21,6 +21,14 @@ public enum MaterialRole
     Hidden
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum PmxBaseTextureMode
+{
+    Inherit,
+    Override,
+    None
+}
+
 public sealed class TextureSlots
 {
     public string? Base { get; set; }
@@ -43,9 +51,15 @@ public sealed class MaterialAssignment
     public string EnglishName { get; set; } = string.Empty;
     public MaterialRole Role { get; set; }
     public TextureSlots Textures { get; set; } = new();
+    public PmxBaseTextureMode? BaseTextureMode { get; set; }
+    // Kept for loading projects made by versions before the three-state mode.
     public bool UsePmxBaseTexture { get; set; } = true;
     public string? PmxBaseTexture { get; set; }
     public bool Enabled => Role is not MaterialRole.None and not MaterialRole.FaceProxy;
+
+    [JsonIgnore]
+    public PmxBaseTextureMode EffectiveBaseTextureMode
+        => BaseTextureMode ?? (UsePmxBaseTexture ? PmxBaseTextureMode.Inherit : PmxBaseTextureMode.Override);
 }
 
 public sealed class StudioProject

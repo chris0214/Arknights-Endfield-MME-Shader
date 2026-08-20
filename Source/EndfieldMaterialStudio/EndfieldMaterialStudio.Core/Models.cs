@@ -22,6 +22,19 @@ public enum MaterialRole
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
+public enum EyeThroughParticipation
+{
+    Auto,
+    Ignore,
+    Iris,
+    Highlight,
+    Sclera,
+    BrowLash,
+    HairDepth,
+    ShiftedDepth
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum PmxBaseTextureMode
 {
     Inherit,
@@ -50,6 +63,9 @@ public sealed class MaterialAssignment
     public string MaterialName { get; set; } = string.Empty;
     public string EnglishName { get; set; } = string.Empty;
     public MaterialRole Role { get; set; }
+    // Auto preserves the legacy role/name classification. Other values are
+    // explicit per-material routing for the generated EyeThrough capture.
+    public EyeThroughParticipation EyeThrough { get; set; } = EyeThroughParticipation.Auto;
     public TextureSlots Textures { get; set; } = new();
     public PmxBaseTextureMode? BaseTextureMode { get; set; }
     // Kept for loading projects made by versions before the three-state mode.
@@ -64,7 +80,7 @@ public sealed class MaterialAssignment
 
 public sealed class StudioProject
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
     public string ProjectName { get; set; } = "EndfieldCharacter";
     public string PmxPath { get; set; } = string.Empty;
     public string RuntimeRoot { get; set; } = string.Empty;

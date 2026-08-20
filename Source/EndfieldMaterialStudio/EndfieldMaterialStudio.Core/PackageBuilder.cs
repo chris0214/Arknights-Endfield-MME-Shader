@@ -52,7 +52,9 @@ public sealed class PackageBuilder
             string? capturePath = null;
             if (project.EnableEyeThrough)
             {
-                var iris = project.Materials.First(material => material.Role == MaterialRole.Iris);
+                var iris = project.Materials.First(material =>
+                    material.EyeThrough == EyeThroughParticipation.Iris ||
+                    (material.EyeThrough == EyeThroughParticipation.Auto && material.Role == MaterialRole.Iris));
                 capturePath = Path.Combine(staging, "EndfieldEyeThrough_Capture.fxsub");
                 File.WriteAllText(capturePath, FxTemplateEngine.BuildEyeCapture(
                     project.RuntimeRoot,
@@ -370,6 +372,7 @@ public sealed class PackageBuilder
             MaterialName = material.MaterialName,
             EnglishName = material.EnglishName,
             Role = material.Role,
+            EyeThrough = material.EyeThrough,
             BaseTextureMode = material.EffectiveBaseTextureMode,
             UsePmxBaseTexture = material.UsePmxBaseTexture,
             PmxBaseTexture = material.PmxBaseTexture,

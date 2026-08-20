@@ -28,7 +28,44 @@ texture2D EndfieldEyeThrough_RT : OFFSCREENRENDERTARGET <
     float ClearDepth = 1.0;
     bool AntiAlias = true;
     int MipLevels = 1;
-    string DefaultEffect = "* = EndfieldEyeThrough_Mask.fxsub;";
+    string DefaultEffect =
+        "self = hide;"
+        "*controller*.pmx = hide;"
+        "ZMDshadow*.x = hide;"
+        "EndfieldPost*.x = hide;"
+        "EndfieldEyeThrough*.x = hide;"
+        "*Endfield*.pmx = EndfieldEyeThrough_Capture.fxsub;"
+        "*.pmd = EndfieldEyeThrough_Mask.fxsub;"
+        "*.pmx = EndfieldEyeThrough_Mask.fxsub;"
+        "*.x = EndfieldEyeThrough_Mask.fxsub;"
+        "* = EndfieldEyeThrough_Mask.fxsub;"
+        ;
+>;
+
+// Camera-visible hair depth encoded into RGB so material effects can sample it.
+// MME depth-stencil targets are not sampleable after their capture pass.
+shared texture2D EndfieldHairVisibility_RT : OFFSCREENRENDERTARGET <
+    string Description = "Endfield camera-visible hair depth";
+    float2 ViewPortRatio = {1.0, 1.0};
+    float4 ClearColor = {1.0, 1.0, 1.0, 0.0};
+    float ClearDepth = 1.0;
+    bool AntiAlias = false;
+    int MipLevels = 1;
+    string Format = "A8R8G8B8";
+    string DefaultEffect = "* = EndfieldHairVisibility_Capture.fxsub;";
+>;
+
+// Face-only depth. Alpha is an explicit validity bit, allowing the hair
+// shadow pass to require a real face surface behind the candidate caster.
+shared texture2D EndfieldFaceDepth_RT : OFFSCREENRENDERTARGET <
+    string Description = "Endfield face-only packed depth";
+    float2 ViewPortRatio = {1.0, 1.0};
+    float4 ClearColor = {1.0, 1.0, 1.0, 0.0};
+    float ClearDepth = 1.0;
+    bool AntiAlias = false;
+    int MipLevels = 1;
+    string Format = "A8R8G8B8";
+    string DefaultEffect = "* = EndfieldFaceDepth_Capture.fxsub;";
 >;
 
 sampler2D EndfieldEyeThroughSampler = sampler_state {

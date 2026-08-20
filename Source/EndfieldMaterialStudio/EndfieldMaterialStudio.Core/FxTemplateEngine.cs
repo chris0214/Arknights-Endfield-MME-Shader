@@ -53,13 +53,13 @@ public static class FxTemplateEngine
         string bindingFileName)
     {
         var text = ReadTemplate(Path.Combine(runtimeRoot, "EndfieldEyeThrough_Capture_ChenQianyu.fxsub"));
-        text = ReplaceDefineString(text, "EF_EYE_CAPTURE_EYE_SUBSETS", Subsets(project, MaterialRole.Iris));
-        text = ReplaceDefineString(text, "EF_EYE_CAPTURE_HIGHLIGHT_SUBSETS", Subsets(project, MaterialRole.EyeHighlight));
-        text = ReplaceDefineString(text, "EF_EYE_CAPTURE_SCLERA_SUBSETS", Subsets(project, MaterialRole.EyeWhite));
-        text = ReplaceDefineString(text, "EF_EYE_CAPTURE_BROW_SUBSETS", Subsets(project, MaterialRole.BrowLash));
+        text = ReplaceDefineString(text, "EF_EYE_CAPTURE_EYE_SUBSETS", CaptureSubsets(project, EyeThroughParticipation.Iris, MaterialRole.Iris));
+        text = ReplaceDefineString(text, "EF_EYE_CAPTURE_HIGHLIGHT_SUBSETS", CaptureSubsets(project, EyeThroughParticipation.Highlight, MaterialRole.EyeHighlight));
+        text = ReplaceDefineString(text, "EF_EYE_CAPTURE_SCLERA_SUBSETS", CaptureSubsets(project, EyeThroughParticipation.Sclera, MaterialRole.EyeWhite));
+        text = ReplaceDefineString(text, "EF_EYE_CAPTURE_BROW_SUBSETS", CaptureSubsets(project, EyeThroughParticipation.BrowLash, MaterialRole.BrowLash));
         text = ReplaceDefineString(text, "EF_EYE_CAPTURE_IGNORED_SUBSETS", IgnoredSubsets(project));
         text = ReplaceDefineString(text, "EF_EYE_CAPTURE_HAIR_DEPTH_SUBSETS", HairDepthSubsets(project));
-        text = ReplaceDefineString(text, "EF_EYE_CAPTURE_SHIFTED_SUBSETS", Subsets(project, MaterialRole.FaceProxy, MaterialRole.EyeOverlay, MaterialRole.BrowOverlay));
+        text = ReplaceDefineString(text, "EF_EYE_CAPTURE_SHIFTED_SUBSETS", ShiftedSubsets(project));
         text = InsertBeforeInclude(text, "internal/endfield_eye.hlsl",
             $"#define EF_EYE_IRIS_MATCAP05_TEXTURE \"{IrisMatcap05}\"\r\n" +
             $"#define EF_EYE_IRIS_MATCAP07_TEXTURE \"{IrisMatcap07}\"\r\n");
@@ -173,9 +173,11 @@ public static class FxTemplateEngine
         return Regex.Replace(text, "string\\s+item\\s*=\\s*\"[^\"]*\"\\s*;", $"string item = \"{EscapeQuoted(headBone)}\";", RegexOptions.CultureInvariant);
     }
 
-    private static string Subsets(StudioProject project, params MaterialRole[] roles)
+    private static string CaptureSubsets(StudioProject project, EyeThroughParticipation participation, params MaterialRole[] autoRoles)
     {
-        var values = project.Materials.Where(material => roles.Contains(material.Role))
+        var values = project.Materials.Where(material =>
+                material.EyeThrough == participation ||
+                (material.EyeThrough == EyeThroughParticipation.Auto && autoRoles.Contains(material.Role)))
             .Select(material => material.MaterialIndex)
             .Distinct()
             .OrderBy(index => index)
@@ -185,9 +187,12 @@ public static class FxTemplateEngine
 
     private static string IgnoredSubsets(StudioProject project)
     {
-        var values = project.Materials.Where(material => material.Role == MaterialRole.None)
+        var values = project.Materials.Where(material => material.EyeThrough == EyeThroughParticipation.Auto &&
+                                                         material.Role == MaterialRole.None)
             .Where(material => ContainsAny(material, "目影", "眼影", "eyeshadow"))
+            .Concat(project.Materials.Where(material => material.EyeThrough == EyeThroughParticipation.Ignore))
             .Select(material => material.MaterialIndex)
+            .Distinct()
             .OrderBy(index => index)
             .ToArray();
         return values.Length == 0 ? "2147483647" : string.Join(",", values);
@@ -196,8 +201,23 @@ public static class FxTemplateEngine
     private static string HairDepthSubsets(StudioProject project)
     {
         var values = project.Materials
-            .Where(material => material.Role == MaterialRole.Hair ||
-                               (material.Role == MaterialRole.None && ContainsAny(material, "发影", "髪影", "hairshadow")))
+            .Where(material => material.EyeThrough == EyeThroughParticipation.HairDepth ||
+                               (material.EyeThrough == EyeThroughParticipation.Auto &&
+                                (material.Role == MaterialRole.Hair ||
+                                 (material.Role == MaterialRole.None && ContainsAny(material, "发影", "髪影", "hairshadow")))))
+            .Select(material => material.MaterialIndex)
+            .Distinct()
+            .OrderBy(index => index)
+            .ToArray();
+        return values.Length == 0 ? "2147483647" : string.Join(",", values);
+    }
+
+    private static string ShiftedSubsets(StudioProject project)
+    {
+        var values = project.Materials
+            .Where(material => material.EyeThrough == EyeThroughParticipation.ShiftedDepth ||
+                               (material.EyeThrough == EyeThroughParticipation.Auto &&
+                                material.Role is MaterialRole.FaceProxy or MaterialRole.EyeOverlay or MaterialRole.BrowOverlay))
             .Select(material => material.MaterialIndex)
             .Distinct()
             .OrderBy(index => index)

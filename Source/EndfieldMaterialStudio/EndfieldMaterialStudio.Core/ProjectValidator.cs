@@ -22,10 +22,27 @@ public static class ProjectValidator
 
         if (project.EnableEyeThrough)
         {
-            if (!project.Materials.Any(material => material.Role == MaterialRole.Iris))
-                messages.Add(Error("EYE_IRIS", "眼透至少需要一个 Iris/眼睛材质。"));
-            if (!project.Materials.Any(material => material.Role == MaterialRole.BrowLash))
-                messages.Add(Error("EYE_BROW", "眼透至少需要一个 BrowLash/眉毛睫毛材质。"));
+            if (!project.Materials.Any(material => material.EyeThrough == EyeThroughParticipation.Iris ||
+                                                   (material.EyeThrough == EyeThroughParticipation.Auto && material.Role == MaterialRole.Iris)))
+                messages.Add(Error("EYE_IRIS", "眼透至少需要一个参与方式为“虹膜 / 眼睛”的材质。"));
+            if (!project.Materials.Any(material => material.EyeThrough == EyeThroughParticipation.BrowLash ||
+                                                   (material.EyeThrough == EyeThroughParticipation.Auto && material.Role == MaterialRole.BrowLash)))
+                messages.Add(Error("EYE_BROW", "眼透至少需要一个参与方式为“眉毛 / 睫毛”的材质。"));
+
+            foreach (var material in project.Materials)
+            {
+                var expectedRole = material.EyeThrough switch
+                {
+                    EyeThroughParticipation.Iris => MaterialRole.Iris,
+                    EyeThroughParticipation.Highlight => MaterialRole.EyeHighlight,
+                    EyeThroughParticipation.Sclera => MaterialRole.EyeWhite,
+                    EyeThroughParticipation.BrowLash => MaterialRole.BrowLash,
+                    _ => (MaterialRole?)null
+                };
+                if (expectedRole is not null && material.Role != expectedRole)
+                    messages.Add(Error("EYE_ROLE_MISMATCH",
+                        $"材质 #{material.MaterialIndex} {material.MaterialName} 的眼透参与方式是 {material.EyeThrough}，材质类型应设为 {expectedRole}。"));
+            }
         }
 
         foreach (var material in project.Materials)

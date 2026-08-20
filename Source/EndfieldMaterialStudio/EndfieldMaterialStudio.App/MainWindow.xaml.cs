@@ -18,6 +18,17 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         RoleCombo.ItemsSource = Enum.GetValues<MaterialRole>();
+        EyeThroughParticipationCombo.ItemsSource = new[]
+        {
+            new KeyValuePair<EyeThroughParticipation, string>(EyeThroughParticipation.Auto, "自动（按材质类型）"),
+            new KeyValuePair<EyeThroughParticipation, string>(EyeThroughParticipation.Ignore, "排除，不参与眼透"),
+            new KeyValuePair<EyeThroughParticipation, string>(EyeThroughParticipation.Iris, "虹膜 / 眼睛"),
+            new KeyValuePair<EyeThroughParticipation, string>(EyeThroughParticipation.Highlight, "眼睛高光"),
+            new KeyValuePair<EyeThroughParticipation, string>(EyeThroughParticipation.Sclera, "眼白"),
+            new KeyValuePair<EyeThroughParticipation, string>(EyeThroughParticipation.BrowLash, "眉毛 / 睫毛"),
+            new KeyValuePair<EyeThroughParticipation, string>(EyeThroughParticipation.HairDepth, "头发深度"),
+            new KeyValuePair<EyeThroughParticipation, string>(EyeThroughParticipation.ShiftedDepth, "偏移深度")
+        };
         BaseTextureModeCombo.ItemsSource = new[]
         {
             new KeyValuePair<PmxBaseTextureMode, string>(PmxBaseTextureMode.Inherit, "沿用 PMX 原贴图"),
@@ -207,6 +218,24 @@ public partial class MainWindow : Window
         SelectedMaterialHint.Text = $"#{_selectedMaterial.MaterialIndex} · {role}";
     }
 
+    private void EyeThroughParticipation_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingEditor || _selectedMaterial is null ||
+            EyeThroughParticipationCombo.SelectedValue is not EyeThroughParticipation participation) return;
+        _selectedMaterial.EyeThrough = participation;
+        _selectedMaterial.Role = participation switch
+        {
+            EyeThroughParticipation.Iris => MaterialRole.Iris,
+            EyeThroughParticipation.Highlight => MaterialRole.EyeHighlight,
+            EyeThroughParticipation.Sclera => MaterialRole.EyeWhite,
+            EyeThroughParticipation.BrowLash => MaterialRole.BrowLash,
+            _ => _selectedMaterial.Role
+        };
+        RoleCombo.SelectedItem = _selectedMaterial.Role;
+        MaterialsGrid.Items.Refresh();
+        SelectedMaterialHint.Text = $"#{_selectedMaterial.MaterialIndex} · {_selectedMaterial.Role} · 眼透：{participation}";
+    }
+
     private void BaseTextureMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_updatingEditor || _selectedMaterial is null ||
@@ -315,6 +344,7 @@ public partial class MainWindow : Window
             };
             SelectedMaterialHint.Text = $"#{material.MaterialIndex} · {material.Role} · PMX Base: {pmxBaseState}";
             RoleCombo.SelectedItem = material.Role;
+            EyeThroughParticipationCombo.SelectedValue = material.EyeThrough;
             BaseTextureModeCombo.SelectedValue = material.EffectiveBaseTextureMode;
             UpdateBaseTextureControls(material.EffectiveBaseTextureMode);
             BaseBox.Text = material.Textures.Base ?? string.Empty;

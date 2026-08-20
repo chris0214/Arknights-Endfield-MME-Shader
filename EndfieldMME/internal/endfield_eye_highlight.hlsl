@@ -9,7 +9,7 @@
 // cornea MatCap used by the main iris material.
 #ifndef EF_EYE_HL_TEXTURE_RESOURCE
 #define EF_EYE_HL_TEXTURE_RESOURCE \
-    "textures/character/eye_highlight.png"
+    "textures/chen/T_actor_chen_iris_01_D.png"
 #endif
 #ifndef EF_EYE_HL_COLOR_GAIN
 #define EF_EYE_HL_COLOR_GAIN 1.05
@@ -48,6 +48,12 @@
 // sclera meshes. The PMX highlight crosses their boundary and otherwise risks
 // a material-order seam when the later sclera pass writes the same depth.
 #define EF_EYE_HL_DEPTH_BIAS 0.0005
+#endif
+#ifndef EF_EYE_HL_DEPTH_BIAS_DISTANCE_START
+#define EF_EYE_HL_DEPTH_BIAS_DISTANCE_START 8.0
+#endif
+#ifndef EF_EYE_HL_DEPTH_BIAS_DISTANCE_END
+#define EF_EYE_HL_DEPTH_BIAS_DISTANCE_END 24.0
 #endif
 
 float4x4 EfEyeHlWorldViewProjection : WORLDVIEWPROJECTION;
@@ -102,9 +108,17 @@ EfEyeHlVaryings EfEyeHlVS(EfEyeHlAttributes input)
         ? toCamera * rsqrt(toCameraLengthSq)
         : EfEyeHlHeadFront();
     output.facing = dot(EfEyeHlHeadFront(), viewDirection);
-    // Eye HL is an authored emissive decal. Keep its layer ordering stable at
-    // every view angle; visibility must not be used to hide geometry issues.
-    output.positionCS.z -= EF_EYE_HL_DEPTH_BIAS * output.positionCS.w;
+    // The old fixed clip-space bias becomes a larger world-space separation as
+    // the camera pulls back, which lets the highlight cross the eyelid. Keep
+    // the close-shot ordering, then fade the bias out before that transition.
+    float cameraDistance = sqrt(max(toCameraLengthSq, 0.0));
+    float biasFade = 1.0 - smoothstep(
+        EF_EYE_HL_DEPTH_BIAS_DISTANCE_START,
+        max(EF_EYE_HL_DEPTH_BIAS_DISTANCE_END,
+            EF_EYE_HL_DEPTH_BIAS_DISTANCE_START + 1e-4),
+        cameraDistance);
+    output.positionCS.z -= EF_EYE_HL_DEPTH_BIAS * saturate(biasFade)
+        * output.positionCS.w;
     return output;
 }
 

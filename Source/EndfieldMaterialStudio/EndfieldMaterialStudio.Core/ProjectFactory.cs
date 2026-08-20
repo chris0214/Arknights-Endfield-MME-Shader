@@ -59,6 +59,7 @@ public static class ProjectFactory
 
     public static void Normalize(StudioProject project)
     {
+        if (project.SchemaVersion < 2) project.SchemaVersion = 2;
         project.Materials ??= new List<MaterialAssignment>();
         foreach (var material in project.Materials)
         {

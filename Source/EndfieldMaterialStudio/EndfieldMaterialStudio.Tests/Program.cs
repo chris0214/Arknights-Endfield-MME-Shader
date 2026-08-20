@@ -106,6 +106,24 @@ void RunTemplateSmokeTests()
         }
     };
     AssertGeneratedText(FxTemplateEngine.BuildEyeCapture(runtime, captureProject, slots, "endfield_generated_face_binding.cp932"), "EyeThrough Capture");
+
+    var explicitProject = new StudioProject
+    {
+        HeadBone = "頭",
+        Materials = new List<MaterialAssignment>
+        {
+            new() { MaterialIndex = 10, MaterialName = "ExplicitIris", Role = MaterialRole.Iris, EyeThrough = EyeThroughParticipation.Iris },
+            new() { MaterialIndex = 11, MaterialName = "IgnoredIris", Role = MaterialRole.Iris, EyeThrough = EyeThroughParticipation.Ignore },
+            new() { MaterialIndex = 12, MaterialName = "ExplicitHair", Role = MaterialRole.None, EyeThrough = EyeThroughParticipation.HairDepth }
+        }
+    };
+    var explicitCapture = FxTemplateEngine.BuildEyeCapture(runtime, explicitProject, slots, "endfield_generated_face_binding.cp932");
+    Assert(explicitCapture.Contains("#define EF_EYE_CAPTURE_EYE_SUBSETS \"10\"", StringComparison.Ordinal),
+        "显式眼透参与方式没有覆盖材质类型自动分类");
+    Assert(explicitCapture.Contains("#define EF_EYE_CAPTURE_IGNORED_SUBSETS \"11\"", StringComparison.Ordinal),
+        "显式排除材质没有写入 Ignore 集合");
+    Assert(explicitCapture.Contains("#define EF_EYE_CAPTURE_HAIR_DEPTH_SUBSETS \"12\"", StringComparison.Ordinal),
+        "显式头发深度材质没有写入 HairDepth 集合");
 }
 
 void RunPmxBaseTextureModeTests()

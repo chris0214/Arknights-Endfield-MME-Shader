@@ -201,6 +201,7 @@ EfEyeCaptureVaryings EfEyeCaptureHighlightVS(
         positionOS, normalOS, uv);
     output.positionCS.z -= EF_EYE_HL_DEPTH_BIAS
         * EfEyeHlDepthBiasVisibility(output.rawFacing)
+        * saturate(output.distanceFade)
         * output.positionCS.w;
     return output;
 }

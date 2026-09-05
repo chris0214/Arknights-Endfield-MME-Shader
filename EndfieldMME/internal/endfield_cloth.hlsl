@@ -541,6 +541,12 @@ float3 EfClothMmdLightColor : SPECULAR < string Object = "Light"; >;
 float3 EfClothCameraPosition : POSITION < string Object = "Camera"; >;
 float3 EfClothCameraDirection : DIRECTION < string Object = "Camera"; >;
 
+// Model UV maps may repeat outside 0-1. Override per material for clamp/mirror assets.
+// Keep LUT, MatCap and screen-space samplers on their own addressing rules.
+#ifndef EF_CLOTH_UV_ADDRESS_MODE
+#define EF_CLOTH_UV_ADDRESS_MODE WRAP
+#endif
+
 texture2D EfClothMainTexture <
     string ResourceName = EF_CLOTH_MAIN_TEXTURE_RESOURCE;
 >;
@@ -550,8 +556,8 @@ sampler2D EfClothMainSampler = sampler_state {
     MagFilter = ANISOTROPIC;
     MipFilter = ANISOTROPIC;
     MaxAnisotropy = 16;
-    AddressU = CLAMP;
-    AddressV = CLAMP;
+    AddressU = EF_CLOTH_UV_ADDRESS_MODE;
+    AddressV = EF_CLOTH_UV_ADDRESS_MODE;
 };
 
 texture2D EfClothNormalTexture <
@@ -563,8 +569,8 @@ sampler2D EfClothNormalSampler = sampler_state {
     MagFilter = ANISOTROPIC;
     MipFilter = ANISOTROPIC;
     MaxAnisotropy = 16;
-    AddressU = CLAMP;
-    AddressV = CLAMP;
+    AddressU = EF_CLOTH_UV_ADDRESS_MODE;
+    AddressV = EF_CLOTH_UV_ADDRESS_MODE;
 };
 
 #if EF_CLOTH_RAIN_ENABLED
@@ -617,8 +623,8 @@ sampler2D EfClothPropertySampler = sampler_state {
     MagFilter = ANISOTROPIC;
     MipFilter = ANISOTROPIC;
     MaxAnisotropy = 16;
-    AddressU = CLAMP;
-    AddressV = CLAMP;
+    AddressU = EF_CLOTH_UV_ADDRESS_MODE;
+    AddressV = EF_CLOTH_UV_ADDRESS_MODE;
 };
 
 texture2D EfClothRdTexture <

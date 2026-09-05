@@ -9,6 +9,7 @@ var runtime = Environment.GetEnvironmentVariable("ENDFIELD_MME_RUNTIME") ?? Path
 foreach (var message in RuntimeContract.Validate(runtime)) Console.WriteLine(message);
 Assert(RuntimeContract.Validate(runtime).All(message => !message.IsError), "EndfieldMME 运行时不完整");
 RunTemplateSmokeTests();
+RunClothUvAddressingTests();
 RunRuntimeCopySmokeTest();
 RunPmxBaseTextureModeTests();
 Console.WriteLine("PORTABLE_TESTS_PASSED");
@@ -249,12 +250,46 @@ static void WriteMinimalPmx(string path, params string[] baseTextures)
     }
 }
 
+void RunClothUvAddressingTests()
+{
+    AssertClothUvAddressing(runtime);
+    Console.WriteLine("CLOTH_UV_ADDRESSING_TESTS_PASSED");
+}
+
+static void AssertClothUvAddressing(string runtimePath)
+{
+    var shader = File.ReadAllText(Path.Combine(runtimePath, "internal", "endfield_cloth.hlsl"));
+    Assert(System.Text.RegularExpressions.Regex.IsMatch(shader,
+        @"#ifndef\s+EF_CLOTH_UV_ADDRESS_MODE\s+#define\s+EF_CLOTH_UV_ADDRESS_MODE\s+WRAP\s+#endif"),
+        "Cloth UV addressing must default to WRAP and allow a per-material override");
+    // Model UV maps repeat outside 0-1; lookup tables must retain edge clamping.
+    foreach (var (sampler, address) in new[]
+    {
+        ("EfClothMainSampler", "EF_CLOTH_UV_ADDRESS_MODE"),
+        ("EfClothNormalSampler", "EF_CLOTH_UV_ADDRESS_MODE"),
+        ("EfClothPropertySampler", "EF_CLOTH_UV_ADDRESS_MODE"),
+        ("EfClothRdSampler", "CLAMP"),
+        ("EfClothLutSampler", "CLAMP"),
+        ("EfClothRsSampler", "CLAMP")
+    })
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(shader,
+            $@"\bsampler2D\s+{sampler}\s*=\s*sampler_state\s*\{{(?<body>[^}}]*)\}}");
+        Assert(match.Success, $"Missing cloth sampler: {sampler}");
+        foreach (var axis in new[] { "U", "V" })
+            Assert(System.Text.RegularExpressions.Regex.IsMatch(match.Groups["body"].Value,
+                $@"\bAddress{axis}\s*=\s*{address}\s*;"),
+                $"{sampler}.Address{axis} must be {address}");
+    }
+}
+
 void RunRuntimeCopySmokeTest()
 {
     var output = Path.Combine(Path.GetTempPath(), "EndfieldRuntimeContract_" + Guid.NewGuid().ToString("N"));
     try
     {
         var copied = RuntimeContract.CopyRuntime(runtime, output);
+        AssertClothUvAddressing(output);
         Assert(copied.Count > 0, "运行时复制没有产生文件");
         Assert(File.Exists(Path.Combine(output, "EndfieldEyeThrough.fx")), "运行时复制缺少眼透入口");
         Assert(File.Exists(Path.Combine(output, "EndfieldHairVisibility_Capture.fxsub")),

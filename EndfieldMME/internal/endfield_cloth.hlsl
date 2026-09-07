@@ -4,10 +4,6 @@
 // Clothing stage 15: direct/anisotropic GGX, broad sheen, runtime MatCap/HDR
 // environment blending, screen rim, ZMD receive/self shadow, controller and
 // the shared geometric-outline pass.
-#ifndef EF_CLOTH_MAIN_TEXTURE_RESOURCE
-#define EF_CLOTH_MAIN_TEXTURE_RESOURCE \
-    "textures/character/cloth_base.png"
-#endif
 #ifndef EF_CLOTH_CULL_MODE
 #define EF_CLOTH_CULL_MODE NONE
 #endif
@@ -35,16 +31,8 @@
 #ifndef EF_CLOTH_OUTLINE_LIGHT_FLOOR
 #define EF_CLOTH_OUTLINE_LIGHT_FLOOR 0.68
 #endif
-#ifndef EF_CLOTH_NORMAL_TEXTURE_RESOURCE
-#define EF_CLOTH_NORMAL_TEXTURE_RESOURCE \
-    "textures/character/cloth_normal.png"
-#endif
 #ifndef EF_CLOTH_NORMAL_STRENGTH
 #define EF_CLOTH_NORMAL_STRENGTH 1.0
-#endif
-#ifndef EF_CLOTH_PROPERTY_TEXTURE_RESOURCE
-#define EF_CLOTH_PROPERTY_TEXTURE_RESOURCE \
-    "textures/character/cloth_property.png"
 #endif
 #ifndef EF_CLOTH_AO_DARK_STRENGTH
 #define EF_CLOTH_AO_DARK_STRENGTH 0.65
@@ -55,23 +43,11 @@
 #ifndef EF_CLOTH_AO_DEBUG
 #define EF_CLOTH_AO_DEBUG 0
 #endif
-#ifndef EF_CLOTH_RD_TEXTURE_RESOURCE
-#define EF_CLOTH_RD_TEXTURE_RESOURCE \
-    "textures/common/T_actor_common_cloth_04_RD.png"
-#endif
 #ifndef EF_CLOTH_RD_COLOR_STRENGTH
 #define EF_CLOTH_RD_COLOR_STRENGTH 0.35
 #endif
-#ifndef EF_CLOTH_LUT_TEXTURE_RESOURCE
-#define EF_CLOTH_LUT_TEXTURE_RESOURCE \
-    "textures/common/T_actor_common_cloth_lut_01_D.png"
-#endif
 #ifndef EF_CLOTH_LUT_STRENGTH
 #define EF_CLOTH_LUT_STRENGTH 0.35
-#endif
-#ifndef EF_CLOTH_RS_TEXTURE_RESOURCE
-#define EF_CLOTH_RS_TEXTURE_RESOURCE \
-    "textures/common/T_actor_common_cloth_04_RS.png"
 #endif
 #ifndef EF_CLOTH_METALLIC_STRENGTH
 #define EF_CLOTH_METALLIC_STRENGTH 1.0
@@ -518,6 +494,7 @@
 #include "internal/endfield_outline.hlsl"
 #endif
 #include "internal/endfield_global_controls.inc"
+#include "internal/endfield_global_shadow_scale.hlsl"
 #if EF_CLOTH_RAIN_ENABLED
 #include "internal/endfield_rain_controls.inc"
 #endif
@@ -541,36 +518,42 @@ float3 EfClothMmdLightColor : SPECULAR < string Object = "Light"; >;
 float3 EfClothCameraPosition : POSITION < string Object = "Camera"; >;
 float3 EfClothCameraDirection : DIRECTION < string Object = "Camera"; >;
 
-// Model UV maps may repeat outside 0-1. Override per material for clamp/mirror assets.
-// Keep LUT, MatCap and screen-space samplers on their own addressing rules.
-#ifndef EF_CLOTH_UV_ADDRESS_MODE
-#define EF_CLOTH_UV_ADDRESS_MODE WRAP
-#endif
-
+#ifdef EF_CLOTH_MAIN_TEXTURE_RESOURCE
 texture2D EfClothMainTexture <
     string ResourceName = EF_CLOTH_MAIN_TEXTURE_RESOURCE;
 >;
+#else
+texture2D EfClothMainTexture : MATERIALTEXTURE <
+    string Format = "A8R8G8B8";
+>;
+#endif
 sampler2D EfClothMainSampler = sampler_state {
     texture = <EfClothMainTexture>;
     MinFilter = ANISOTROPIC;
     MagFilter = ANISOTROPIC;
     MipFilter = ANISOTROPIC;
     MaxAnisotropy = 16;
-    AddressU = EF_CLOTH_UV_ADDRESS_MODE;
-    AddressV = EF_CLOTH_UV_ADDRESS_MODE;
+    AddressU = WRAP;
+    AddressV = WRAP;
 };
 
+#ifdef EF_CLOTH_NORMAL_TEXTURE_RESOURCE
 texture2D EfClothNormalTexture <
     string ResourceName = EF_CLOTH_NORMAL_TEXTURE_RESOURCE;
 >;
+#else
+texture2D EfClothNormalTexture : MATERIALTEXTURE <
+    string Format = "A8R8G8B8";
+>;
+#endif
 sampler2D EfClothNormalSampler = sampler_state {
     texture = <EfClothNormalTexture>;
     MinFilter = ANISOTROPIC;
     MagFilter = ANISOTROPIC;
     MipFilter = ANISOTROPIC;
     MaxAnisotropy = 16;
-    AddressU = EF_CLOTH_UV_ADDRESS_MODE;
-    AddressV = EF_CLOTH_UV_ADDRESS_MODE;
+    AddressU = WRAP;
+    AddressV = WRAP;
 };
 
 #if EF_CLOTH_RAIN_ENABLED
@@ -614,6 +597,7 @@ sampler2D EfClothRainDropPhaseSampler = sampler_state {
 float EfClothRainTime : TIME;
 #endif
 
+#ifdef EF_CLOTH_PROPERTY_TEXTURE_RESOURCE
 texture2D EfClothPropertyTexture <
     string ResourceName = EF_CLOTH_PROPERTY_TEXTURE_RESOURCE;
 >;
@@ -623,10 +607,12 @@ sampler2D EfClothPropertySampler = sampler_state {
     MagFilter = ANISOTROPIC;
     MipFilter = ANISOTROPIC;
     MaxAnisotropy = 16;
-    AddressU = EF_CLOTH_UV_ADDRESS_MODE;
-    AddressV = EF_CLOTH_UV_ADDRESS_MODE;
+    AddressU = WRAP;
+    AddressV = WRAP;
 };
+#endif
 
+#ifdef EF_CLOTH_RD_TEXTURE_RESOURCE
 texture2D EfClothRdTexture <
     string ResourceName = EF_CLOTH_RD_TEXTURE_RESOURCE;
 >;
@@ -638,7 +624,9 @@ sampler2D EfClothRdSampler = sampler_state {
     AddressU = CLAMP;
     AddressV = CLAMP;
 };
+#endif
 
+#ifdef EF_CLOTH_LUT_TEXTURE_RESOURCE
 texture2D EfClothLutTexture <
     string ResourceName = EF_CLOTH_LUT_TEXTURE_RESOURCE;
 >;
@@ -650,7 +638,9 @@ sampler2D EfClothLutSampler = sampler_state {
     AddressU = CLAMP;
     AddressV = CLAMP;
 };
+#endif
 
+#ifdef EF_CLOTH_RS_TEXTURE_RESOURCE
 texture2D EfClothRsTexture <
     string ResourceName = EF_CLOTH_RS_TEXTURE_RESOURCE;
 >;
@@ -662,6 +652,35 @@ sampler2D EfClothRsSampler = sampler_state {
     AddressU = CLAMP;
     AddressV = CLAMP;
 };
+#endif
+
+float4 EfClothSamplePropertyMap(float2 uv)
+{
+#ifdef EF_CLOTH_PROPERTY_TEXTURE_RESOURCE
+    return saturate(tex2D(EfClothPropertySampler, uv));
+#else
+    // Neutral non-metal cloth. A stores smoothness and is inverted later.
+    return float4(0.0, 0.5, 1.0, 0.0);
+#endif
+}
+
+float4 EfClothSampleRdRamp(float coordinate)
+{
+#ifdef EF_CLOTH_RD_TEXTURE_RESOURCE
+    return tex2D(EfClothRdSampler, float2(coordinate, 0.5));
+#else
+    return float4(1.0, 1.0, 1.0, 1.0);
+#endif
+}
+
+float3 EfClothSampleRsMap(float2 uv)
+{
+#ifdef EF_CLOTH_RS_TEXTURE_RESOURCE
+    return tex2D(EfClothRsSampler, uv).rgb;
+#else
+    return float3(0.0, 0.0, 0.0);
+#endif
+}
 
 texture2D EfClothEnvTexture <
     string ResourceName = EF_CLOTH_ENV_TEXTURE_RESOURCE;
@@ -1151,6 +1170,9 @@ float3 EfClothLinearToSrgb(float3 color)
 float3 EfClothSampleLut(float3 albedoSrgb)
 {
     albedoSrgb = saturate(albedoSrgb);
+#ifndef EF_CLOTH_LUT_TEXTURE_RESOURCE
+    return albedoSrgb;
+#else
 #if EF_CLOTH_LUT_USE_BRG
     // 32 horizontal slices: B chooses the slice, R/G address its 2D plane.
     albedoSrgb = albedoSrgb.brg;
@@ -1170,6 +1192,7 @@ float3 EfClothSampleLut(float3 albedoSrgb)
         EfClothLutSampler,
         lutUvFinal + float2(0.03125, 0.0)).rgb;
     return lerp(lutColor0, lutColor1, lutTileLerp);
+#endif
 }
 
 float3 EfClothDirectGgx(
@@ -1432,7 +1455,7 @@ float3 EfClothRefineSpecular(
     float2 rsUv = saturate(float2(
         distributionWithoutPi * (roughness2 + 1e-4),
         (1.0 - metallic) * roughness));
-    float3 rsColor = tex2D(EfClothRsSampler, rsUv).rgb;
+    float3 rsColor = EfClothSampleRsMap(rsUv);
     float rsStrength = EF_CLOTH_RS_STRENGTH;
 #if EF_CLOTH_CONTROLLER_ENABLED
     rsStrength = EfClothControllerRs(rsStrength);
@@ -1802,7 +1825,7 @@ float4 EfClothPS(
     halfLambert = pow(
         halfLambert,
         max(lightCurve, 1e-4));
-    float4 rd = tex2D(EfClothRdSampler, float2(halfLambert, 0.5));
+    float4 rd = EfClothSampleRdRamp(halfLambert);
     float3 rdTintSrgb = lerp(
         float3(1.0, 1.0, 1.0),
         saturate(rd.rgb),
@@ -1810,8 +1833,7 @@ float4 EfClothPS(
     float diffuseWeight = saturate(rd.a);
     // Endfield property map contract: R metallic, G reflectivity,
     // B ambient occlusion, A smoothness.
-    float4 property = saturate(
-        tex2D(EfClothPropertySampler, input.uv));
+    float4 property = EfClothSamplePropertyMap(input.uv);
     float metallic = saturate(
         property.r * max(metallicStrength, 0.0));
     float reflectivity = saturate(
@@ -2451,7 +2473,7 @@ float4 EfClothPS(
         * rimMetalMask
         * max(rimStrength, 0.0);
     litColor += rimLighting;
-    litColor = EfApplyGlobalMaterialGrade(
+    litColor = EfApplyGlobalMaterialGradeScaled(
         litColor,
         diffuseWeightWithAo);
     return float4(max(EfClothLinearToSrgb(litColor), 0.0), 1.0);
@@ -2604,8 +2626,7 @@ float4 EfClothScreenRimPS(
             EF_CLOTH_SCREEN_RIM_LIGHT_START + 1e-4),
         noL);
 
-    float4 property = saturate(
-        tex2D(EfClothPropertySampler, input.uv));
+    float4 property = EfClothSamplePropertyMap(input.uv);
     float metallic = saturate(
         property.r * max(EF_CLOTH_METALLIC_STRENGTH, 0.0));
     float metalMask = lerp(

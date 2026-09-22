@@ -1,0 +1,80 @@
+#ifndef ENDFIELD_FACE_DEPTH_CAPTURE_INCLUDED
+#define ENDFIELD_FACE_DEPTH_CAPTURE_INCLUDED
+
+#ifndef EF_FACE_DEPTH_SUBSETS
+#define EF_FACE_DEPTH_SUBSETS "2147483647"
+#endif
+
+float4x4 EfFaceDepthWorldViewProjection : WORLDVIEWPROJECTION;
+
+struct EfFaceDepthVaryings {
+    float4 positionCS : POSITION;
+    float2 depthZW : TEXCOORD0;
+};
+
+EfFaceDepthVaryings EfFaceDepthVS(float4 positionOS : POSITION)
+{
+    EfFaceDepthVaryings output;
+    output.positionCS = mul(positionOS, EfFaceDepthWorldViewProjection);
+    output.depthZW = output.positionCS.zw;
+    return output;
+}
+
+float3 EfFaceDepthEncode(float depth)
+{
+    float3 packed = frac(depth * float3(1.0, 255.0, 65025.0));
+    packed.xy -= packed.yz / 255.0;
+    return packed;
+}
+
+float4 EfFaceDepthPS(EfFaceDepthVaryings input) : COLOR0
+{
+    float depth = saturate(
+        input.depthZW.x / max(abs(input.depthZW.y), 1e-6));
+    return float4(EfFaceDepthEncode(depth), 1.0);
+}
+
+float4 EfFaceDepthMaskPS(EfFaceDepthVaryings input) : COLOR0
+{
+    return 0.0;
+}
+
+#define EF_FACE_DEPTH_TECHNIQUE(name, passName) \
+    technique name < \
+        string MMDPass = passName; \
+        string Subset = EF_FACE_DEPTH_SUBSETS; \
+    > { \
+        pass CaptureNearestFace { \
+            ZEnable = true; \
+            ZWriteEnable = true; \
+            ZFunc = LESS; \
+            CullMode = NONE; \
+            AlphaTestEnable = false; \
+            AlphaBlendEnable = false; \
+            ColorWriteEnable = 15; \
+            VertexShader = compile vs_3_0 EfFaceDepthVS(); \
+            PixelShader = compile ps_3_0 EfFaceDepthPS(); \
+        } \
+    }
+
+#define EF_FACE_DEPTH_DEFAULT_TECHNIQUE(name, passName) \
+    technique name < string MMDPass = passName; > { \
+        pass IgnoreOtherMaterials { \
+            ZEnable = false; \
+            ZWriteEnable = false; \
+            ZFunc = ALWAYS; \
+            CullMode = NONE; \
+            AlphaTestEnable = false; \
+            AlphaBlendEnable = false; \
+            ColorWriteEnable = 0; \
+            VertexShader = compile vs_3_0 EfFaceDepthVS(); \
+            PixelShader = compile ps_3_0 EfFaceDepthMaskPS(); \
+        } \
+    }
+
+EF_FACE_DEPTH_TECHNIQUE(EfFaceDepthObject, "object")
+EF_FACE_DEPTH_TECHNIQUE(EfFaceDepthObjectSs, "object_ss")
+EF_FACE_DEPTH_DEFAULT_TECHNIQUE(EfFaceDepthMask, "object")
+EF_FACE_DEPTH_DEFAULT_TECHNIQUE(EfFaceDepthMaskSs, "object_ss")
+
+#endif

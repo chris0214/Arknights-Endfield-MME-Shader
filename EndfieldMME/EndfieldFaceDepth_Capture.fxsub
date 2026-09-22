@@ -1,0 +1,3 @@
+// Safe fallback: GUI exports replace the subset with final PMX face indices.
+#define EF_FACE_DEPTH_SUBSETS "2147483647"
+#include "internal/endfield_face_depth_capture_core.fxsub"

@@ -46,6 +46,13 @@ public static class EmmWriter
             lines.Add("Acs2.show = false");
             lines.Add($"Pmd2 = {eyeCapturePath}");
             foreach (var key in controllers.Keys) lines.Add($"{key}.show = false");
+            lines.Add(string.Empty);
+            lines.Add("[Effect@EndfieldFaceDepth_RT]");
+            lines.Add("Owner = Acs2");
+            lines.Add("Acs1.show = false");
+            lines.Add("Acs2.show = false");
+            lines.Add($"Pmd2 = {Path.Combine(packageRoot, "EndfieldFaceDepth_Capture.fxsub")}");
+            foreach (var key in controllers.Keys) lines.Add($"{key}.show = false");
         }
 
         AddShadowSection(lines, "SMap", project.EnableEyeThrough, controllers.Keys, packageRoot, "ZMDshadow_ShadowMap.fxsub");

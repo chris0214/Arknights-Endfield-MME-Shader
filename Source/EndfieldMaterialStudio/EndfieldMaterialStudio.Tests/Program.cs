@@ -11,6 +11,8 @@ Assert(RuntimeContract.Validate(runtime).All(message => !message.IsError), "Endf
 RunTemplateSmokeTests();
 RunClothUvAddressingTests();
 RunRuntimeCopySmokeTest();
+RunFaceDepthTests();
+RunFaceDepthPackageTests();
 RunPmxBaseTextureModeTests();
 Console.WriteLine("PORTABLE_TESTS_PASSED");
 
@@ -43,8 +45,8 @@ Assert(File.Exists(Path.Combine(result.OutputDirectory, "internal", "endfield_sh
 Assert(File.Exists(Path.Combine(result.OutputDirectory, "EndfieldHairVisibility_Capture.fxsub")),
     "通用角色包缺少头发可见性 Capture");
 Assert(File.ReadAllBytes(Path.Combine(result.OutputDirectory, "ZMDshadow.fx"))
-    .SequenceEqual(File.ReadAllBytes(Path.Combine(runtime, "ZMDshadow.fx"))),
-    "输出包改写了权威 ZMDshadow.fx");
+    .SequenceEqual(ZmdAutoRoutePatcher.Build(File.ReadAllBytes(Path.Combine(runtime, "ZMDshadow.fx")))),
+    "输出包阴影文件应仅包含已声明的自动路由改写");
 Console.WriteLine("GENERIC_PACKAGE_TEST_PASSED");
 
 void RunTemplateSmokeTests()
@@ -125,6 +127,113 @@ void RunTemplateSmokeTests()
         "显式排除材质没有写入 Ignore 集合");
     Assert(explicitCapture.Contains("#define EF_EYE_CAPTURE_HAIR_DEPTH_SUBSETS \"12\"", StringComparison.Ordinal),
         "显式头发深度材质没有写入 HairDepth 集合");
+}
+
+void RunFaceDepthTests()
+{
+    var project = new StudioProject
+    {
+        Materials = new List<MaterialAssignment>
+        {
+            Material(7, MaterialRole.Face), Material(2, MaterialRole.Face),
+            Material(3, MaterialRole.Hair), Material(8, MaterialRole.FaceProxy),
+            Material(9, MaterialRole.EyeOverlay), Material(0, MaterialRole.None)
+        }
+    };
+    var capture = FxTemplateEngine.BuildFaceDepthCapture(project);
+    Assert(capture.Contains("EF_FACE_DEPTH_SUBSETS \"2,7\""), "FaceDepth must select only final Face indices in sorted order");
+    project.EnableEyeThrough = false;
+    Assert(FxTemplateEngine.BuildFaceDepthCapture(project).Contains("\"2147483647\""), "Disabled capture must be empty");
+    Assert(FxTemplateEngine.BuildFaceDepthCapture(new StudioProject()).Contains("\"2147483647\""), "Missing Face must not capture all subsets");
+    var host = File.ReadAllText(Path.Combine(runtime, "EndfieldEyeThrough.fx"));
+    var routed = EyeThroughAutoRoutePatcher.BuildFaceDepthRouting(host, "My Character.pmx", true);
+    Assert(routed.Contains("\"My Character.pmx = EndfieldFaceDepth_Capture.fxsub;\" \"* = hide;\""), "FaceDepth must exclude other objects");
+    Assert(!routed.Contains("* = EndfieldFaceDepth_Capture.fxsub"), "FaceDepth must not wildcard-capture unrelated models");
+    Assert(EyeThroughAutoRoutePatcher.BuildFaceDepthRouting(routed, "My Character.pmx", true) == routed, "FaceDepth routing must be idempotent");
+    var disabled = EyeThroughAutoRoutePatcher.BuildFaceDepthRouting(routed, "My Character.pmx", false);
+    Assert(!disabled.Contains("= EndfieldFaceDepth_Capture.fxsub"), "Disabled FaceDepth must have no capture route");
+    var head = host[..host.IndexOf("// Face-only depth.", StringComparison.Ordinal)];
+    Assert(routed.StartsWith(head, StringComparison.Ordinal), "Eye/hair routing was modified by FaceDepth patch");
+    AssertThrows(() => EyeThroughAutoRoutePatcher.BuildFaceDepthRouting(host, "*.pmx", true), "Wildcard file name must be rejected");
+    AssertThrows(() => EyeThroughAutoRoutePatcher.BuildFaceDepthRouting(host.Replace("EndfieldFaceDepth_RT", "Other_RT"), "model.pmx", true), "Missing face depth target must be rejected");
+    var temp = Path.Combine(Path.GetTempPath(), "EndfieldFaceDepthRuntime_" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        RuntimeContract.CopyRuntime(runtime, temp);
+        foreach (var file in new[] { "EndfieldFaceDepth_Capture.fxsub", "internal/endfield_face_depth_capture_core.fxsub" })
+        {
+            var path = Path.Combine(temp, file);
+            Assert(File.Exists(path), $"Export missing {file}");
+            // CopyRuntime intentionally omits runtime source templates; check this specific missing-file error.
+            var bytes = File.ReadAllBytes(path);
+            File.Delete(path);
+            Assert(RuntimeContract.Validate(temp).Any(m => m.IsError && m.Message.Contains(file)), $"Missing {file} must fail validation");
+            File.WriteAllBytes(path, bytes);
+        }
+    }
+    finally { if (Directory.Exists(temp)) Directory.Delete(temp, true); }
+    Console.WriteLine("FACE_DEPTH_TESTS_PASSED");
+}
+
+void RunFaceDepthPackageTests()
+{
+    var temp = Path.Combine(Path.GetTempPath(), "EndfieldFaceDepthPackage_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(temp);
+    try
+    {
+        var pmxPath = Path.Combine(temp, "character.pmx");
+        var texture = Path.Combine(temp, "base.png");
+        File.Copy(Path.Combine(runtime, "textures/common/T_actor_common_face_01_hl_M.png"), texture);
+        WriteMinimalPmx(pmxPath, Enumerable.Repeat("base.png", 6).ToArray());
+        var original = File.ReadAllBytes(pmxPath);
+        var roles = new[] { MaterialRole.None, MaterialRole.Iris, MaterialRole.Face, MaterialRole.BrowLash, MaterialRole.Cloth, MaterialRole.Hair };
+        foreach (var derived in new[] { false, true })
+        {
+            var project = ProjectFactory.Create(pmxPath, runtime, Path.Combine(temp, "output"));
+            project.ProjectName = derived ? "Derived" : "Original";
+            project.GenerateDerivedPmx = derived;
+            foreach (var material in project.Materials)
+            {
+                material.Role = roles[material.MaterialIndex];
+                material.Textures = new TextureSlots
+                {
+                    Base = texture, Normal = texture, Property = texture, Rd = texture,
+                    Rs = texture, Lut = texture, Sdf = texture, St = texture,
+                    ColorMask = texture, LipSpecular = texture, HairLine = texture
+                };
+            }
+            var sourceHost = File.ReadAllBytes(Path.Combine(runtime, "EndfieldEyeThrough.fx"));
+            var result = new PackageBuilder().Build(project);
+            var capture = File.ReadAllText(Path.Combine(result.OutputDirectory, "EndfieldFaceDepth_Capture.fxsub"));
+            Assert(capture.Contains("EF_FACE_DEPTH_SUBSETS \"2\""), "Package face indices must match final PMX (including derived model)");
+            var finalModel = PmxReader.Read(result.ModelPath);
+            Assert(finalModel.Materials[2].Name == "material_2", "Final Face material index changed");
+            Assert(finalModel.Materials.Count == (derived ? 8 : 6), "Derived PMX overlays missing");
+            var host = File.ReadAllText(Path.Combine(result.OutputDirectory, "EndfieldEyeThrough.fx"));
+            Assert(host.Contains($"{Path.GetFileName(result.ModelPath)} = EndfieldFaceDepth_Capture.fxsub;"), "FaceDepth route must target packaged PMX");
+            var emm = Encoding.GetEncoding(936).GetString(File.ReadAllBytes(result.EmmPath));
+            Assert(emm.Contains("[Effect@EndfieldFaceDepth_RT]"), "EMM missing face-depth RT assignment");
+            Assert(File.ReadAllBytes(pmxPath).SequenceEqual(original), "Export modified source PMX");
+            Assert(File.ReadAllBytes(Path.Combine(runtime, "EndfieldEyeThrough.fx")).SequenceEqual(sourceHost), "Export modified authoritative host");
+            Assert(result.GeneratedFiles.Count(f => Path.GetFileName(f) == "EndfieldFaceDepth_Capture.fxsub") == 1, "FaceDepth output listed twice");
+            project.EnableEyeThrough = false;
+            project.ProjectName += "_Disabled";
+            var off = new PackageBuilder().Build(project);
+            Assert(File.ReadAllText(Path.Combine(off.OutputDirectory, "EndfieldFaceDepth_Capture.fxsub")).Contains("\"2147483647\""), "Disabled export must not capture faces");
+            Assert(!Encoding.GetEncoding(936).GetString(File.ReadAllBytes(off.EmmPath)).Contains("[Effect@EndfieldFaceDepth_RT]"), "Disabled export must not assign face RT");
+            project.Materials[2].MaterialIndex = 200;
+            Assert(ProjectValidator.Validate(project).Any(m => m.Code == "MATERIAL_INDEX" && m.IsError), "Out-of-range final material index must be rejected");
+        }
+    }
+    finally { if (Directory.Exists(temp)) Directory.Delete(temp, true); }
+    Console.WriteLine("FACE_DEPTH_PACKAGE_TESTS_PASSED");
+}
+
+static void AssertThrows(Action action, string message)
+{
+    try { action(); }
+    catch (InvalidDataException) { return; }
+    throw new InvalidOperationException(message);
 }
 
 void RunPmxBaseTextureModeTests()
@@ -222,8 +331,19 @@ static void WriteMinimalPmx(string path, params string[] baseTextures)
     writer.Write((byte)8);
     writer.Write(new byte[] { 1, 0, 1, 1, 1, 1, 1, 1 });
     for (var i = 0; i < 4; i++) WriteText(writer, string.Empty);
-    writer.Write(0); // vertices
-    writer.Write(0); // surface indices
+    writer.Write(3); // triangle shared by the synthetic materials
+    for (var vertex = 0; vertex < 3; vertex++)
+    {
+        writer.Write(vertex == 1 ? 1.0f : 0.0f);
+        writer.Write(vertex == 2 ? 1.0f : 0.0f);
+        writer.Write(0.0f);
+        writer.Write(0.0f); writer.Write(0.0f); writer.Write(1.0f);
+        writer.Write(vertex == 1 ? 1.0f : 0.0f); writer.Write(vertex == 2 ? 1.0f : 0.0f);
+        writer.Write((byte)0); writer.Write((sbyte)-1); writer.Write(1.0f);
+    }
+    writer.Write(baseTextures.Length * 3);
+    for (var material = 0; material < baseTextures.Length; material++)
+    { writer.Write((byte)0); writer.Write((byte)1); writer.Write((byte)2); }
     writer.Write(baseTextures.Length);
     foreach (var texture in baseTextures) WriteText(writer, texture);
     writer.Write(baseTextures.Length);
@@ -238,9 +358,13 @@ static void WriteMinimalPmx(string path, params string[] baseTextures)
         writer.Write((byte)1);
         writer.Write((byte)0);
         WriteText(writer, string.Empty);
-        writer.Write(0);
+        writer.Write(3);
     }
     writer.Write(0); // bones
+    writer.Write(0); // morphs
+    writer.Write(0); // display frames
+    writer.Write(0); // rigid bodies
+    writer.Write(0); // joints
 
     static void WriteText(BinaryWriter writer, string value)
     {

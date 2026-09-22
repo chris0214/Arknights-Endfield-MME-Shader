@@ -1,6 +1,6 @@
 # Endfield Material Studio 完整使用教程
 
-本文适用于 Endfield Material Studio 2.0.0。工具用于读取普通 PMX、分配 Endfield MME 材质、生成眼透派生模型，并输出可移动的角色包与 EMM。工具不会改写 EndfieldMME 的核心 Shader。
+本文适用于当前源码配套的 Endfield Material Studio。工具用于读取普通 PMX、分配 Endfield MME 材质、生成眼透派生模型，并输出角色包与 EMM。工具不会改写 EndfieldMME 的核心 Shader。
 
 ## 一、准备工作
 
@@ -10,9 +10,9 @@
 - MikuMikuEffect 0.37 x64。
 - 一个合法取得、可正常载入的 PMX 模型。
 - 模型原有基础贴图，以及模型自己的 SDF、法线、Property/MRO 等语义贴图。
-- 本发行包内的 `EndfieldMaterialStudio.exe` 和 `EndfieldMME`。
+- 本发行包内的 `GUI/EndfieldMaterialStudio.exe` 和 `EndfieldMME/`。
 
-请把 EXE 与 `EndfieldMME` 保持在同一目录。不要直接删除或重命名 `EndfieldMME/internal`。
+请保持发布包结构：`GUI/` 与 `EndfieldMME/` 为同级目录，EXE 位于 `GUI/` 内。不要直接删除或重命名 `EndfieldMME/internal`。
 
 ## 二、从普通 PMX 新建工程
 
@@ -91,6 +91,9 @@
 3. 保留模型原来的材质顺序与贴图依赖。
 4. 把派生模型放进输出角色包的 `Model` 目录。
 5. 生成模型专属 `EndfieldEyeThrough_Capture.fxsub`。
+6. 根据最终 PMX 的 `Face` 材质编号生成 `EndfieldFaceDepth_Capture.fxsub`，配合 `internal/endfield_face_depth_capture_core.fxsub` 采集面部深度。不要把透明代理 `FaceProxy` 当作 `Face`。
+
+面部深度只路由到该角色包的 PMX 文件名，其他模型和附件隐藏；没有 Face 材质或关闭眼透时为空采集。加载多个同名 PMX 时应在 MME 的 RT 页中明确分配各自 Capture。更换模型文件名后需要重新生成路由或手动分配。
 
 不要把某个角色固定的材质序号写进其他模型。软件会根据当前工程的分类结果生成 Capture 子集。
 
@@ -116,13 +119,13 @@
 - `textures/character/`：当前角色语义贴图的打包副本。
 - `Material_###_Role.fx`：每个材质独立的 FX。
 - `material-map.json` 与中文材质映射说明。
-- `EndfieldEyeThrough.x/.fx` 与模型专属 Capture。
+- `EndfieldEyeThrough.x/.fx`、模型专属眼透 Capture 和 FaceDepth Capture。
 - `ZMDshadow.x/.fx`。
 - 控制器、`internal`、通用贴图与环境预设。
 - `工程名_自动映射.emm`。
 - 完成后的 `.endfieldstudio.json`。
 
-生成后的工程 JSON 会改为引用角色包内的 PMX、运行时和贴图，因此整个输出目录可以移动。
+生成后的工程 JSON 和 EMM 保存当前输出位置的路径。移动角色包后需重新定位工程和重新生成 EMM，或按材质说明手动分配效果。
 
 ## 八、在 MMD 中加载
 
@@ -161,15 +164,17 @@
 
 ## 十二、源码构建
 
-安装 .NET 8 SDK 后，在源码目录运行：
+安装能读取 `.slnx` 的 .NET SDK（例如 .NET 10 SDK；项目目标框架仍为 .NET 8），在 `Source/EndfieldMaterialStudio/` 目录运行：
 
 ```powershell
 dotnet restore EndfieldMaterialStudio.slnx -r win-x64
 dotnet build EndfieldMaterialStudio.slnx -c Release
-./publish-win-x64.ps1 -RuntimeRoot "完整的 EndfieldMME 或 EndfieldMME 路径"
+./publish-win-x64.ps1
+# 自包含版本需使用另一个尚不存在的输出目录
+./publish-win-x64.ps1 -SelfContained -OutputDirectory ./artifacts/release-self-contained
 ```
 
-发布脚本优先复用同工作区旧工具的本地 .NET 8 运行时缓存；没有缓存时需要联网下载 Microsoft 的 `win-x64` 运行时包。
+发布脚本默认使用仓库根目录的 `EndfieldMME/`，通过 `NuGet.Publish.Config` 还原依赖；本机 NuGet 缓存缺少依赖时需要联网。默认轻量版需要 .NET 8 Desktop Runtime；`-SelfContained` 版包含运行环境。脚本拒绝覆盖已有输出目录。
 
 集成回归不会附带或下载角色模型。运行陈千语回归时，由测试者自行准备有权使用的 PMX，并设置：
 
@@ -190,3 +195,10 @@ dotnet run --project EndfieldMaterialStudio.Tests -c Release
 - 研究参考：`REFERENCES.md`。
 
 参考与致谢不代表任何第三方为本项目背书，也不改变原作品许可。
+
+## 发布包与源码
+
+用户包只保留 GUI 程序、EndfieldMME 运行依赖、控制器说明和许可；不包含开发源码、研究笔记、测试输出或角色模型。
+源码包中的测试和构建脚本用于维护，不需要复制到 MMD 场景。
+`ChenQianyu` 命名 FX 是 GUI 使用的模板，需通过工具替换成当前角色的路径和编号后使用。
+布料三张模型 UV 贴图默认 WRAP；需要钳制的素材可在生成材质的 include 前定义 `EF_CLOTH_UV_ADDRESS_MODE CLAMP`。LUT、MatCap 和阴影采样规则不随之改变。

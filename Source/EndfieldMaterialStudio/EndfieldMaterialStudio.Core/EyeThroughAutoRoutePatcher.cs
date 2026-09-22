@@ -43,6 +43,29 @@ public static class EyeThroughAutoRoutePatcher
         return encoding.GetBytes(text);
     }
 
+    public static void PatchFaceDepthFile(string path, string modelFileName, bool enabled)
+    {
+        var encoding = new UTF8Encoding(false, true);
+        File.WriteAllText(path, BuildFaceDepthRouting(File.ReadAllText(path, encoding), modelFileName, enabled), encoding);
+    }
+
+    public static string BuildFaceDepthRouting(string text, string modelFileName, bool enabled)
+    {
+        if (string.IsNullOrWhiteSpace(modelFileName) || modelFileName.IndexOfAny(new[] { '*', '?', ';', '=', '"', '\r', '\n', '/', '\\' }) >= 0)
+            throw new InvalidDataException("Face depth routing requires a literal PMX file name.");
+        const string target = @"shared\s+texture2D\s+EndfieldFaceDepth_RT\s*:\s*OFFSCREENRENDERTARGET\s*<(?<body>[\s\S]*?)>;";
+        var matches = Regex.Matches(text, target, RegexOptions.CultureInvariant);
+        if (matches.Count != 1) throw new InvalidDataException("Expected one EndfieldFaceDepth_RT target.");
+        const string effect = "string\\s+DefaultEffect\\s*=\\s*(?:\"[^\"]*\"\\s*)+;";
+        var block = matches[0].Value;
+        if (Regex.Matches(block, effect).Count != 1) throw new InvalidDataException("Expected one face-depth DefaultEffect.");
+        var routing = enabled
+            ? $"string DefaultEffect = \"{modelFileName} = EndfieldFaceDepth_Capture.fxsub;\" \"* = hide;\";"
+            : "string DefaultEffect = \"* = hide;\";";
+        var patched = Regex.Replace(block, effect, _ => routing);
+        return text[..matches[0].Index] + patched + text[(matches[0].Index + matches[0].Length)..];
+    }
+
     private static void ValidateRouting(string text, int legacyCount)
     {
         var targetCount = Count(text, $"\"{TargetRule}\"");

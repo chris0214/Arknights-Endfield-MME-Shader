@@ -69,6 +69,9 @@ public static class ProjectValidator
             return messages;
         }
 
+        var modelIndices = model.Materials.Select(material => material.Index).ToHashSet();
+        foreach (var material in project.Materials.Where(material => !modelIndices.Contains(material.MaterialIndex)))
+            messages.Add(Error("MATERIAL_INDEX", $"PMX 不包含材质 #{material.MaterialIndex}，请重新导入或检查派生模型。"));
         var assignments = project.Materials
             .GroupBy(material => material.MaterialIndex)
             .ToDictionary(group => group.Key, group => group.First());

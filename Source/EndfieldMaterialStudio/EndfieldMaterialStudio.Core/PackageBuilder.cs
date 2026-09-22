@@ -28,6 +28,11 @@ public sealed class PackageBuilder
             if (project.EnableEyeThrough)
                 EyeThroughAutoRoutePatcher.PatchFile(Path.Combine(staging, "EndfieldEyeThrough.fx"));
             var packagedModelPath = CopyModelAndDependencies(project, modelPath, staging, outputRoot, generated);
+            var faceDepthPath = Path.Combine(staging, "EndfieldFaceDepth_Capture.fxsub");
+            File.WriteAllText(faceDepthPath, FxTemplateEngine.BuildFaceDepthCapture(project), new UTF8Encoding(false));
+            EyeThroughAutoRoutePatcher.PatchFaceDepthFile(
+                Path.Combine(staging, "EndfieldEyeThrough.fx"), Path.GetFileName(packagedModelPath), project.EnableEyeThrough);
+            if (!generated.Contains(faceDepthPath, StringComparer.OrdinalIgnoreCase)) generated.Add(faceDepthPath);
             var packagedTextures = CopyTextures(project, staging, generated);
             const string bindingFileName = "endfield_generated_face_binding.cp932";
             var bindingPath = Path.Combine(staging, "internal", bindingFileName);

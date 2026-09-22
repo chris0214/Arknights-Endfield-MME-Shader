@@ -408,8 +408,8 @@ public partial class MainWindow : Window
         {
             foreach (var candidate in new[]
             {
-                Path.Combine(current.FullName, "ShaderTemplate"),
                 Path.Combine(current.FullName, "EndfieldMME"),
+                Path.Combine(current.FullName, "ShaderTemplate"),
                 current.FullName
             })
             {

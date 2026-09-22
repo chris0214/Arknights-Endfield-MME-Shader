@@ -46,6 +46,18 @@ public static class FxTemplateEngine
         return Encoding.GetEncoding(932).GetBytes(text);
     }
 
+    public static string BuildFaceDepthCapture(StudioProject project)
+    {
+        var indices = project.EnableEyeThrough
+            ? project.Materials.Where(material => material.Role == MaterialRole.Face)
+                .Select(material => material.MaterialIndex).Distinct().OrderBy(index => index).ToArray()
+            : Array.Empty<int>();
+        if (indices.Any(index => index < 0)) throw new InvalidDataException("Face material index must be non-negative.");
+        var subsets = indices.Length == 0 ? "2147483647" : string.Join(",", indices);
+        return $"#define EF_FACE_DEPTH_SUBSETS \"{subsets}\"\r\n" +
+               "#include \"internal/endfield_face_depth_capture_core.fxsub\"\r\n";
+    }
+
     public static string BuildEyeCapture(
         string runtimeRoot,
         StudioProject project,

@@ -494,7 +494,6 @@
 #include "internal/endfield_outline.hlsl"
 #endif
 #include "internal/endfield_global_controls.inc"
-#include "internal/endfield_global_shadow_scale.hlsl"
 #if EF_CLOTH_RAIN_ENABLED
 #include "internal/endfield_rain_controls.inc"
 #endif
@@ -518,6 +517,11 @@ float3 EfClothMmdLightColor : SPECULAR < string Object = "Light"; >;
 float3 EfClothCameraPosition : POSITION < string Object = "Camera"; >;
 float3 EfClothCameraDirection : DIRECTION < string Object = "Camera"; >;
 
+// Model UVs can repeat outside 0-1; keep lookup and screen samplers independent.
+#ifndef EF_CLOTH_UV_ADDRESS_MODE
+#define EF_CLOTH_UV_ADDRESS_MODE WRAP
+#endif
+
 #ifdef EF_CLOTH_MAIN_TEXTURE_RESOURCE
 texture2D EfClothMainTexture <
     string ResourceName = EF_CLOTH_MAIN_TEXTURE_RESOURCE;
@@ -533,8 +537,8 @@ sampler2D EfClothMainSampler = sampler_state {
     MagFilter = ANISOTROPIC;
     MipFilter = ANISOTROPIC;
     MaxAnisotropy = 16;
-    AddressU = WRAP;
-    AddressV = WRAP;
+    AddressU = EF_CLOTH_UV_ADDRESS_MODE;
+    AddressV = EF_CLOTH_UV_ADDRESS_MODE;
 };
 
 #ifdef EF_CLOTH_NORMAL_TEXTURE_RESOURCE
@@ -552,8 +556,8 @@ sampler2D EfClothNormalSampler = sampler_state {
     MagFilter = ANISOTROPIC;
     MipFilter = ANISOTROPIC;
     MaxAnisotropy = 16;
-    AddressU = WRAP;
-    AddressV = WRAP;
+    AddressU = EF_CLOTH_UV_ADDRESS_MODE;
+    AddressV = EF_CLOTH_UV_ADDRESS_MODE;
 };
 
 #if EF_CLOTH_RAIN_ENABLED
@@ -607,8 +611,8 @@ sampler2D EfClothPropertySampler = sampler_state {
     MagFilter = ANISOTROPIC;
     MipFilter = ANISOTROPIC;
     MaxAnisotropy = 16;
-    AddressU = WRAP;
-    AddressV = WRAP;
+    AddressU = EF_CLOTH_UV_ADDRESS_MODE;
+    AddressV = EF_CLOTH_UV_ADDRESS_MODE;
 };
 #endif
 
@@ -863,8 +867,12 @@ bool EfClothReconstructTangentBasis(
 
 float3 EfClothSampleBaseNormalTS(float2 uv)
 {
+#ifdef EF_CLOTH_NORMAL_TEXTURE_RESOURCE
     return EfClothUnpackNormal(
         tex2D(EfClothNormalSampler, uv).rg);
+#else
+    return float3(0.0, 0.0, 1.0);
+#endif
 }
 
 #if EF_CLOTH_RAIN_ENABLED
@@ -2473,7 +2481,7 @@ float4 EfClothPS(
         * rimMetalMask
         * max(rimStrength, 0.0);
     litColor += rimLighting;
-    litColor = EfApplyGlobalMaterialGradeScaled(
+    litColor = EfApplyGlobalMaterialGrade(
         litColor,
         diffuseWeightWithAo);
     return float4(max(EfClothLinearToSrgb(litColor), 0.0), 1.0);

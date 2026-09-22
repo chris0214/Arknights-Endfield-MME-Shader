@@ -15,3 +15,7 @@
 *.blend
 *.pmm
 *.emm
+
+*.log
+*.pdb
+**/.vs/

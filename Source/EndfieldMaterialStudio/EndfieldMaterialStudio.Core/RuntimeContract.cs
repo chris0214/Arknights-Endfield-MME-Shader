@@ -26,6 +26,9 @@ public static class RuntimeContract
         "EndfieldEyeOverlay_ChenQianyu.fx",
         "EndfieldBrowOverlay_ChenQianyu.fx",
         "EndfieldEyeThrough_Capture_ChenQianyu.fxsub",
+        "EndfieldEyeThrough_Capture.fxsub",
+        "EndfieldFaceDepth_Capture.fxsub",
+        "internal/endfield_face_depth_capture_core.fxsub",
         "EndfieldHairVisibility_Capture.fxsub",
         "EndfieldEyeThrough_Mask.fxsub",
         "EndfieldEyeThrough.fx",
@@ -36,11 +39,15 @@ public static class RuntimeContract
         "ZMDshadow_ViewportMap.fxsub",
         "HgShadow_CFSUSM.fxh",
         "HgShadow_CLSPSM.fxh",
-        "HgShadow_Header.fxh"
+        "HgShadow_Header.fxh",
+        "EndfieldPost.fx",
+        "EndfieldPost.x",
+        "JitteredSamp.png"
     };
 
     private static readonly string[] CopiedTopLevelFiles =
     {
+        "EndfieldFaceDepth_Capture.fxsub",
         "EndfieldHair_Final.fx",
         "EndfieldFace_Final.fx",
         "EndfieldEyeThrough_Mask.fxsub",
@@ -96,6 +103,7 @@ public static class RuntimeContract
         var files = new List<string>();
         CopyDirectory(Path.Combine(runtimeRoot, "internal"), Path.Combine(outputRoot, "internal"), files);
         CopyDirectory(Path.Combine(runtimeRoot, "controller"), Path.Combine(outputRoot, "controller"), files);
+        CopyDirectory(Path.Combine(runtimeRoot, "docs", "reference"), Path.Combine(outputRoot, "docs", "reference"), files);
         CopyDirectory(Path.Combine(runtimeRoot, "textures", "common"), Path.Combine(outputRoot, "textures", "common"), files);
         CopyDirectory(Path.Combine(runtimeRoot, "textures", "environment_presets"), Path.Combine(outputRoot, "textures", "environment_presets"), files);
         foreach (var name in FixedTextureNames)
